@@ -1,0 +1,248 @@
+version: '3.8'
+
+services:
+  # 1. PostgreSQL Database Service
+  postgres-service:
+    image: postgres:alpine
+    container_name: omniproctor_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=ai-exam-platform
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # 2. MongoDB Database Service
+  mongodb:
+    image: mongo:latest
+    container_name: omniproctor_mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: always
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # 3. Redis Caching Service
+  redis-service:
+    image: redis:alpine
+    container_name: omniproctor_redis
+    ports:
+      - "6379:6379"
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # 4. Auth Service (Port 5001)
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: omniproctor_auth
+    ports:
+      - "5001:5001"
+    environment:
+      - PORT=5001
+      - MONGO_URI=mongodb://mongodb:27017/ai-exam-platform
+      - DATA_DIR=/app/database/data
+      - JWT_SECRET=super_secret_jwt_key_4821
+      - REFRESH_SECRET=super_secret_refresh_key_4821
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USER=aiexamplatform123@gmail.com
+      - SMTP_PASSWORD=zmso iaml jdkh wpxn
+      - SMTP_FROM=aiexamplatform123@gmail.com
+    volumes:
+      - ./database/data:/app/database/data
+    restart: always
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  # 5. College Service (Port 5002)
+  college-service:
+    build:
+      context: ./college-service
+      dockerfile: Dockerfile
+    container_name: omniproctor_colleges
+    ports:
+      - "5002:5002"
+    environment:
+      - PORT=5002
+      - MONGO_URI=mongodb://mongodb:27017/ai-exam-platform
+      - DATA_DIR=/app/database/data
+      - JWT_SECRET=super_secret_jwt_key_4821
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USER=aiexamplatform123@gmail.com
+      - SMTP_PASSWORD=zmso iaml jdkh wpxn
+      - SMTP_FROM=aiexamplatform123@gmail.com
+    volumes:
+      - ./database/data:/app/database/data
+    restart: always
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  # 6. Student Service (Port 5003)
+  student-service:
+    build:
+      context: ./student-service
+      dockerfile: Dockerfile
+    container_name: omniproctor_students
+    ports:
+      - "5003:5003"
+    environment:
+      - PORT=5003
+      - MONGO_URI=mongodb://mongodb:27017/ai-exam-platform
+      - DATA_DIR=/app/database/data
+      - JWT_SECRET=super_secret_jwt_key_4821
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USER=aiexamplatform123@gmail.com
+      - SMTP_PASSWORD=zmso iaml jdkh wpxn
+      - SMTP_FROM=aiexamplatform123@gmail.com
+    volumes:
+      - ./database/data:/app/database/data
+    restart: always
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  # 7. Exam Service (Port 5004)
+  exam-service:
+    build:
+      context: ./exam-service
+      dockerfile: Dockerfile
+    container_name: omniproctor_exams
+    ports:
+      - "5004:5004"
+    environment:
+      - PORT=5004
+      - MONGO_URI=mongodb://mongodb:27017/ai-exam-platform
+      - DATA_DIR=/app/database/data
+      - JWT_SECRET=super_secret_jwt_key_4821
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USER=aiexamplatform123@gmail.com
+      - SMTP_PASSWORD=zmso iaml jdkh wpxn
+      - SMTP_FROM=aiexamplatform123@gmail.com
+    volumes:
+      - ./database/data:/app/database/data
+    restart: always
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  # 8. Proctoring Service (Port 5005)
+  proctoring-service:
+    build:
+      context: ./proctoring-service
+      dockerfile: Dockerfile
+    container_name: omniproctor_proctoring
+    ports:
+      - "5005:5005"
+    environment:
+      - PORT=5005
+      - MONGO_URI=mongodb://mongodb:27017/ai-exam-platform
+      - DATA_DIR=/app/database/data
+      - UPLOADS_DIR=/app/uploads/evidence
+      - JWT_SECRET=super_secret_jwt_key_4821
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USER=aiexamplatform123@gmail.com
+      - SMTP_PASSWORD=zmso iaml jdkh wpxn
+      - SMTP_FROM=aiexamplatform123@gmail.com
+    volumes:
+      - ./database/data:/app/database/data
+      - ./uploads/evidence:/app/uploads/evidence
+    restart: always
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  # 9. Notification & Analytics Service (Port 5006)
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    container_name: omniproctor_notifications
+    ports:
+      - "5006:5006"
+    environment:
+      - PORT=5006
+      - MONGO_URI=mongodb://mongodb:27017/ai-exam-platform
+      - DATA_DIR=/app/database/data
+      - JWT_SECRET=super_secret_jwt_key_4821
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USER=aiexamplatform123@gmail.com
+      - SMTP_PASSWORD=zmso iaml jdkh wpxn
+      - SMTP_FROM=aiexamplatform123@gmail.com
+    volumes:
+      - ./database/data:/app/database/data
+    restart: always
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+  # 10. Dedicated WebSocket Service (Port 6001)
+  websocket-service:
+    build:
+      context: ./websocket-service
+      dockerfile: Dockerfile
+    container_name: omniproctor_websocket
+    ports:
+      - "6001:6001"
+    environment:
+      - PORT=6001
+    restart: always
+
+  # 11. AI Inference Sim Proxy Service (Port 7000)
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    container_name: omniproctor_ai_sim
+    ports:
+      - "7000:7000"
+    environment:
+      - PORT=7000
+    restart: always
+
+  # 12. React Frontend Web Application (Port 80)
+  frontend-service:
+    build:
+      context: ./frontend-service
+      dockerfile: Dockerfile
+    container_name: omniproctor_frontend
+    ports:
+      - "80:80"
+    restart: always
+    depends_on:
+      - auth-service
+      - college-service
+      - student-service
+      - exam-service
+      - proctoring-service
+      - notification-service
+      - websocket-service
+
+volumes:
+  pg_data:
+  mongo_data:
