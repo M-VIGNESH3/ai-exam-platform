@@ -173,12 +173,13 @@ const queueEmail = async (recipient, subject, eventType, content) => {
     host: smtpHost,
     port: smtpPort,
     secure: smtpPort === 465,
-    auth: { user: smtpUser, pass: smtpPass }
+    auth: { user: smtpUser, pass: smtpPass },
+    tls: { rejectUnauthorized: false }
   });
 
   try {
     await transporter.sendMail({
-      from: `"${smtpFrom}" <${smtpUser}>`,
+      from: `"OmniProctor.ai" <${smtpUser}>`,
       to: recipient,
       subject,
       text: content,

@@ -159,12 +159,13 @@ const queueEmail = async (recipient, subject, eventType, content) => {
     host: smtpHost,
     port: smtpPort,
     secure: smtpPort === 465,
-    auth: { user: smtpUser, pass: smtpPass }
+    auth: { user: smtpUser, pass: smtpPass },
+    tls: { rejectUnauthorized: false }
   });
 
   try {
     await transporter.sendMail({
-      from: `"${smtpFrom}" <${smtpUser}>`,
+      from: `"OmniProctor.ai" <${smtpUser}>`,
       to: recipient,
       subject,
       text: content,
@@ -364,12 +365,12 @@ app.post('/api/auth/verify-otp', async (req, res) => {
     return res.status(400).json({ message: 'Verification OTP has expired. Please request a new code.' });
   }
 
-  if (student.otp !== otp) {
-    await studentCols.updateOne({ id: student.id }, { otpRetries: (student.otpRetries || 0) + 1 });
+  if (String(student.otp) !== String(otp)) {
+    await studentCols.updateOne({ rollNumber: student.rollNumber }, { otpRetries: (student.otpRetries || 0) + 1 });
     return res.status(400).json({ message: 'Invalid verification OTP code' });
   }
 
-  await studentCols.updateOne({ id: student.id }, { 
+  await studentCols.updateOne({ rollNumber: student.rollNumber }, { 
     verified: true, 
     otp: null, 
     otpExpires: null, 
@@ -400,13 +401,13 @@ app.post('/api/auth/activate-student', async (req, res) => {
     return res.status(400).json({ message: 'Activation code has expired. Please contact your administrator or request a new code.' });
   }
 
-  if (student.otp !== otp) {
+  if (String(student.otp) !== String(otp)) {
     return res.status(400).json({ message: 'Invalid activation code/OTP.' });
   }
 
   const hashedPassword = bcrypt.hashSync(password, 8);
 
-  await studentCols.updateOne({ id: student.id }, {
+  await studentCols.updateOne({ rollNumber: student.rollNumber }, {
     password: hashedPassword,
     verified: true,
     status: 'active',
@@ -434,7 +435,7 @@ app.post('/api/auth/resend-otp', async (req, res) => {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   const otpExpires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
-  await studentCols.updateOne({ id: student.id }, { 
+  await studentCols.updateOne({ rollNumber: student.rollNumber }, { 
     otp, 
     otpExpires, 
     otpRetries: 0 

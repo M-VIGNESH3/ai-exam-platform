@@ -8,6 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import mongoose from 'mongoose';
 import multer from 'multer';
+import * as XLSX from 'xlsx';
 
 dotenv.config();
 
@@ -172,12 +173,13 @@ const queueEmail = async (recipient, subject, eventType, content) => {
     host: smtpHost,
     port: smtpPort,
     secure: smtpPort === 465,
-    auth: { user: smtpUser, pass: smtpPass }
+    auth: { user: smtpUser, pass: smtpPass },
+    tls: { rejectUnauthorized: false }
   });
 
   try {
     await transporter.sendMail({
-      from: `"${smtpFrom}" <${smtpUser}>`,
+      from: `"OmniProctor.ai" <${smtpUser}>`,
       to: recipient,
       subject,
       text: content,
@@ -365,19 +367,23 @@ app.post('/api/students/import', authenticate, authorize(['management']), upload
   }
 
   try {
-    const rawContent = req.file.buffer.toString('utf8');
-    const lines = rawContent.split(/\r?\n/);
-    if (lines.length <= 1) {
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    
+    const dataAOA = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+    
+    if (dataAOA.length <= 1) {
       return res.status(400).json({ message: 'Uploaded file is empty or missing data rows.' });
     }
 
-    const headers = lines[0].toLowerCase().split(',').map(h => h.trim());
+    const headers = dataAOA[0].map(h => String(h || '').toLowerCase().trim());
     const reqHeaders = ['full_name', 'email', 'roll_number', 'branch', 'year'];
     const missingHeaders = reqHeaders.filter(rh => !headers.includes(rh));
     
     if (missingHeaders.length > 0) {
       return res.status(400).json({ 
-        message: `Missing mandatory CSV column headers: ${missingHeaders.join(', ')}`,
+        message: `Missing mandatory spreadsheet columns: ${missingHeaders.join(', ')}`,
         expectedHeaders: reqHeaders
       });
     }
@@ -397,23 +403,19 @@ app.post('/api/students/import', authenticate, authorize(['management']), upload
     const validBranches = ['CSE', 'ECE', 'IT', 'ME', 'EE', 'Civil'];
     const validYears = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
 
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-
-      const cols = line.split(',').map(c => c.trim().replace(/^["']|["']$/g, ''));
-      if (cols.length < reqHeaders.length) {
-        errors.push({ row: i + 1, error: 'Row contains missing fields / invalid column count.' });
+    for (let i = 1; i < dataAOA.length; i++) {
+      const cols = dataAOA[i];
+      if (!cols || cols.length === 0 || cols.every(cell => String(cell || '').trim() === '')) {
         continue;
       }
 
-      const fullName = cols[nameIdx];
-      const email = cols[emailIdx]?.toLowerCase();
-      const rollNumber = cols[rollIdx];
-      const branch = cols[branchIdx];
-      const year = cols[yearIdx];
-      const mobileNumber = mobileIdx !== -1 ? cols[mobileIdx] : '';
-      const gender = genderIdx !== -1 ? cols[genderIdx] : 'Not Specified';
+      const fullName = String(cols[nameIdx] || '').trim();
+      const email = String(cols[emailIdx] || '').trim().toLowerCase();
+      const rollNumber = String(cols[rollIdx] || '').trim();
+      const branch = String(cols[branchIdx] || '').trim();
+      const year = String(cols[yearIdx] || '').trim();
+      const mobileNumber = mobileIdx !== -1 ? String(cols[mobileIdx] || '').trim() : '';
+      const gender = genderIdx !== -1 ? String(cols[genderIdx] || '').trim() : 'Not Specified';
 
       if (!fullName || !email || !rollNumber || !branch || !year) {
         errors.push({ row: i + 1, error: 'Missing values for required parameters.' });
@@ -444,18 +446,18 @@ app.post('/api/students/import', authenticate, authorize(['management']), upload
 
       const csvDupRoll = imported.some(item => item.rollNumber === rollNumber);
       if (csvDupRoll) {
-        errors.push({ row: i + 1, rollNumber, error: `Duplicate roll number ${rollNumber} within the same CSV.` });
+        errors.push({ row: i + 1, rollNumber, error: `Duplicate roll number ${rollNumber} within the same file.` });
         continue;
       }
 
       const csvDupEmail = imported.some(item => item.email === email);
       if (csvDupEmail) {
-        errors.push({ row: i + 1, rollNumber, error: `Duplicate email ${email} within the same CSV.` });
+        errors.push({ row: i + 1, rollNumber, error: `Duplicate email ${email} within the same file.` });
         continue;
       }
 
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      const otpExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours validity for invites
+      const otpExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
       imported.push({
         id: rollNumber,
@@ -468,7 +470,7 @@ app.post('/api/students/import', authenticate, authorize(['management']), upload
         gender,
         collegeId,
         collegeName,
-        password: '', // will be set during activation
+        password: '',
         mustResetPassword: false,
         verified: false,
         status: 'pending',
@@ -494,7 +496,7 @@ app.post('/api/students/import', authenticate, authorize(['management']), upload
 
     return res.json({
       summary: {
-        totalRowsProcessed: lines.length - 1,
+        totalRowsProcessed: dataAOA.length - 1,
         successCount: imported.length,
         errorCount: errors.length
       },

@@ -241,12 +241,13 @@ app.post('/api/analytics/emails/:id/resend', authenticate, authorize(['managemen
     host: smtpHost,
     port: smtpPort,
     secure: smtpPort === 465,
-    auth: { user: smtpUser, pass: smtpPass }
+    auth: { user: smtpUser, pass: smtpPass },
+    tls: { rejectUnauthorized: false }
   });
 
   try {
     await transporter.sendMail({
-      from: `"${smtpFrom}" <${smtpUser}>`,
+      from: `"OmniProctor.ai" <${smtpUser}>`,
       to: email.recipient,
       subject: email.subject,
       text: email.content,

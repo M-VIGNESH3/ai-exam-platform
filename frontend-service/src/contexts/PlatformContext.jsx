@@ -1088,7 +1088,28 @@ export const PlatformProvider = ({ children }) => {
   };
 
   // Student registration flow
-  const registerStudent = (studentData) => {
+  const registerStudent = async (studentData) => {
+    if (apiActive) {
+      try {
+        const data = await apiRequest('/auth/register', 'POST', {
+          fullName: studentData.fullName,
+          email: studentData.email,
+          rollNumber: studentData.rollNumber,
+          branch: studentData.branch,
+          year: studentData.year,
+          mobileNumber: studentData.mobileNumber,
+          gender: studentData.gender,
+          collegeId: studentData.collegeId,
+          password: studentData.password
+        });
+        addToast('Registration Initiated', 'Verification OTP sent to your email.', 'success');
+        return { success: true, api: true };
+      } catch (err) {
+        addToast('Registration Failed', err.message, 'danger');
+        return { success: false, message: err.message };
+      }
+    }
+
     // Validate duplicate roll numbers
     if (students.some(s => s.rollNumber.toLowerCase() === studentData.rollNumber.toLowerCase())) {
       addToast('Registration Error', 'Roll number already registered.', 'danger');
@@ -1131,6 +1152,7 @@ export const PlatformProvider = ({ children }) => {
       githubProfile: studentData.githubProfile || '',
       linkedinProfile: studentData.linkedinProfile || '',
       status: 'active',
+      verified: true,
       batchId: 'b1', // assign a default batch
       createdAt: new Date().toISOString()
     };
@@ -1147,6 +1169,22 @@ export const PlatformProvider = ({ children }) => {
     );
 
     addToast('Registration Successful', 'Your account has been created. You can now log in.', 'success');
+    return { success: true, api: false };
+  };
+
+  const verifyStudentOtp = async (email, otp) => {
+    if (apiActive) {
+      try {
+        await apiRequest('/auth/verify-otp', 'POST', { email, otp });
+        addToast('Verification Success', 'Your account is activated! You can now log in.', 'success');
+        return { success: true };
+      } catch (err) {
+        addToast('Verification Failed', err.message, 'danger');
+        return { success: false, message: err.message };
+      }
+    }
+
+    addToast('Verification Success', 'Account activated (Offline simulation)!', 'success');
     return { success: true };
   };
 
@@ -1940,12 +1978,15 @@ export const PlatformProvider = ({ children }) => {
       logout,
       addToast,
       removeToast,
+      apiActive,
       onboardCollege,
       toggleCollegeStatus,
       addManagementAdmin,
       addDepartment,
       createBatch,
       addStudent,
+      registerStudent,
+      verifyStudentOtp,
       toggleStudentStatus,
       forceResetStudentPassword,
       resendStudentCredentials,

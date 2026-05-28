@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { usePlatform } from '../../contexts/PlatformContext';
 import { 
   Users, BookOpen, UserCheck, ShieldAlert, FileText, Upload, Plus, BarChart3, 
@@ -39,12 +39,14 @@ const ManagementPortal = () => {
     addToast,
     auditLogs,
     logAuditEvent,
-    questions
+    questions,
+    apiActive
   } = usePlatform();
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [userSubTab, setUserSubTab] = useState('students');
   const [bulkSubTab, setBulkSubTab] = useState('upload');
+  const fileInputRef = useRef(null);
 
   // Manual Creation States
   const [studentForm, setStudentForm] = useState({ name: '', email: '', rollNumber: '', department: 'Computer Science & Engineering', year: '3rd Year', batchId: 'b1' });
@@ -57,6 +59,7 @@ const ManagementPortal = () => {
   const [dragOver, setDragOver] = useState(false);
   const [fileName, setFileName] = useState('');
   const [rawCsvText, setRawCsvText] = useState('');
+  const [rawFileObject, setRawFileObject] = useState(null);
   const [uploadResult, setUploadResult] = useState(null);
   const [isValidating, setIsValidating] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
@@ -157,8 +160,8 @@ const ManagementPortal = () => {
     let headers = "";
     let sample = "";
     if (type === 'student') {
-      headers = "Name, Email, Roll Number, Department, Year, Batch\n";
-      sample = "Alice Cooper, alice.c@student.edu, ICS-2024-099, Computer Science & Engineering, 3rd Year, CSE-A\nBob Marley, bob.m@student.edu, ICS-2024-101, Electronics & Communication, 2nd Year, ECE-A";
+      headers = "full_name,email,roll_number,branch,year,mobile_number,gender\n";
+      sample = "Alice Cooper,alice.c@student.edu,ICS-2024-099,CSE,3rd Year,9876543210,Female\nBob Marley,bob.m@student.edu,ICS-2024-101,ECE,2nd Year,9876543211,Male";
     } else if (type === 'teacher') {
       headers = "Name, Email, Department, Subject\n";
       sample = "Prof. Severus Snape, severus.s@ics.edu, Computer Science & Engineering, Cryptography\nDr. Bruce Banner, bruce.b@ics.edu, Information Technology, Data Science";
@@ -186,14 +189,12 @@ const ManagementPortal = () => {
     setDragOver(false);
   };
 
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setDragOver(false);
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      const file = files[0];
-      if (file.name.endsWith('.csv') || file.name.endsWith('.xlsx')) {
-        setFileName(file.name);
+  const handleFileSelected = (file) => {
+    if (file.name.endsWith('.csv') || file.name.endsWith('.xlsx')) {
+      setFileName(file.name);
+      setRawFileObject(file);
+
+      if (file.name.endsWith('.csv')) {
         const reader = new FileReader();
         reader.onload = (event) => {
           setRawCsvText(event.target.result);
@@ -201,15 +202,48 @@ const ManagementPortal = () => {
         };
         reader.readAsText(file);
       } else {
-        addToast('Invalid File Format', 'Only .csv or .xlsx spreadsheets supported.', 'danger');
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          try {
+            if (!window.XLSX) {
+              addToast('Loading Library', 'Excel library loading. Please retry dropping/selecting the file.', 'warning');
+              const script = document.createElement('script');
+              script.src = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
+              document.head.appendChild(script);
+              return;
+            }
+            const data = new Uint8Array(event.target.result);
+            const workbook = window.XLSX.read(data, { type: 'array' });
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            const csvText = window.XLSX.utils.sheet_to_csv(worksheet);
+            setRawCsvText(csvText);
+            addToast('File Loaded', `Successfully read and parsed Excel: ${file.name}`, 'info');
+          } catch (err) {
+            console.error(err);
+            addToast('Excel Parse Error', 'Unable to parse Excel file format.', 'danger');
+          }
+        };
+        reader.readAsArrayBuffer(file);
       }
+    } else {
+      addToast('Invalid File Format', 'Only .csv or .xlsx spreadsheets supported.', 'danger');
     }
   };
 
-  // Run bulk import simulator
-  const executeBulkImport = (e) => {
+  const handleDrop = (e) => {
     e.preventDefault();
-    if (!rawCsvText.trim()) {
+    setDragOver(false);
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      handleFileSelected(files[0]);
+    }
+  };
+
+  // Run bulk import
+  const executeBulkImport = async (e) => {
+    e.preventDefault();
+    if (!rawCsvText.trim() && !rawFileObject) {
       addToast('Input Required', 'Provide CSV format rows or drop template file.', 'warning');
       return;
     }
@@ -221,17 +255,60 @@ const ManagementPortal = () => {
       setImportProgress(p => Math.min(p + 30, 90));
     }, 400);
 
-    setTimeout(() => {
-      clearInterval(interval);
-      const res = processBulkUpload(uploadType, rawCsvText);
-      setImportProgress(100);
-      setIsValidating(false);
-      setUploadResult(res);
-      if (res.success) {
-        setRawCsvText('');
-        setFileName('');
+    if (apiActive && uploadType === 'student') {
+      try {
+        const formData = new FormData();
+        if (rawFileObject) {
+          formData.append('file', rawFileObject);
+        } else {
+          const blob = new Blob([rawCsvText], { type: 'text/csv' });
+          formData.append('file', blob, 'roster.csv');
+        }
+        const token = localStorage.getItem('access_token');
+        const res = await fetch('/api/students/import', {
+          method: 'POST',
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+          body: formData
+        });
+        clearInterval(interval);
+        setImportProgress(100);
+        const data = await res.json();
+        if (res.ok) {
+          setUploadResult({
+            success: true,
+            message: `Imported ${data.summary?.successCount || 0} students. ${data.summary?.errorCount || 0} errors.`,
+            imported: data.preview || [],
+            errors: data.errors || []
+          });
+          setRawCsvText('');
+          setFileName('');
+          setRawFileObject(null);
+          addToast('Import Complete', `${data.summary?.successCount || 0} students imported successfully.`, 'success');
+        } else {
+          setUploadResult({ success: false, message: data.message || 'Import failed.', errors: data.errors || [] });
+          addToast('Import Failed', data.message || 'Server-side import error.', 'danger');
+        }
+      } catch (err) {
+        clearInterval(interval);
+        setUploadResult({ success: false, message: err.message });
+        addToast('Import Error', err.message, 'danger');
+      } finally {
+        setIsValidating(false);
       }
-    }, 1500);
+    } else {
+      setTimeout(() => {
+        clearInterval(interval);
+        const res = processBulkUpload(uploadType, rawCsvText);
+        setImportProgress(100);
+        setIsValidating(false);
+        setUploadResult(res);
+        if (res.success) {
+          setRawCsvText('');
+          setFileName('');
+          setRawFileObject(null);
+        }
+      }, 1500);
+    }
   };
 
   // Active / finished stats
@@ -734,6 +811,7 @@ const ManagementPortal = () => {
                       onDragOver={handleDragOver}
                       onDragLeave={handleDragLeave}
                       onDrop={handleDrop}
+                      onClick={() => fileInputRef.current && fileInputRef.current.click()}
                       style={{
                         border: '2px dashed var(--border-color)',
                         borderRadius: 'var(--radius-md)',
@@ -746,10 +824,22 @@ const ManagementPortal = () => {
                     >
                       <Upload size={32} style={{ color: 'var(--color-primary)', marginBottom: '0.5rem' }} />
                       <p style={{ fontSize: '0.85rem', fontWeight: 500 }}>
-                        {fileName ? `File Selected: ${fileName}` : 'Drag & Drop Excel/CSV spreadsheet here'}
+                        {fileName ? `File Selected: ${fileName}` : 'Drag & Drop Excel/CSV spreadsheet here (or click to browse)'}
                       </p>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Or click template options on right</span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Supported formats: .csv, .xlsx</span>
                     </div>
+
+                    <input 
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files.length > 0) {
+                          handleFileSelected(e.target.files[0]);
+                        }
+                      }}
+                      style={{ display: 'none' }}
+                      accept=".csv,.xlsx"
+                    />
 
                     <div className="form-group">
                       <label className="form-label">Paste CSV Content directly (Fallback)</label>

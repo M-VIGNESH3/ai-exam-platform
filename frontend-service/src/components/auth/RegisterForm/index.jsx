@@ -3,7 +3,7 @@ import { usePlatform } from '../../../contexts/PlatformContext';
 import { ShieldCheck, Mail, Lock, User, Calendar, Phone, Upload, Eye, EyeOff, Search, Compass, ChevronRight, CheckCircle, ArrowLeft, AlertCircle } from 'lucide-react';
 
 const StudentRegister = ({ onBackToLogin }) => {
-  const { colleges, students, registerStudent, sendMockEmail, addToast } = usePlatform();
+  const { colleges, students, registerStudent, verifyStudentOtp, sendMockEmail, addToast, apiActive } = usePlatform();
 
   // Registration step state
   // 1: College selection, 2: Form inputs, 3: Email verification
@@ -129,7 +129,7 @@ const StudentRegister = ({ onBackToLogin }) => {
     return null;
   };
 
-  const handleRegisterSubmit = (e) => {
+  const handleRegisterSubmit = async (e) => {
     e.preventDefault();
     const error = validateForm();
     if (error) {
@@ -138,36 +138,53 @@ const StudentRegister = ({ onBackToLogin }) => {
       return;
     }
 
-    // Generate simulated 6-digit verification code
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    setSentCode(code);
-    
-    // Send email to student
-    sendMockEmail(
-      formData.email,
-      'OmniProctor Verification Code',
-      'email_verification',
-      `Dear ${formData.fullName},\n\nThank you for registering at OmniProctor.ai.\n\nYour 6-digit email verification code is: ${code}\n\nPlease enter this code in the registration panel to activate your account.\n\nBest regards,\nOmniProctor.ai Team`
-    );
-
-    // Toast code so they can verify without looking at logs if needed
-    addToast('Verification Sent', `Verification code sent to ${formData.email}. Mock code is: ${code}`, 'info');
-    setStep(3);
-  };
-
-  const handleVerifyCode = (e) => {
-    e.preventDefault();
-    if (userVerificationCode === sentCode) {
-      // Register student in context state
-      const result = registerStudent({
+    if (apiActive) {
+      const result = await registerStudent({
         ...formData,
         collegeId: selectedCollege.id
       });
       if (result.success) {
+        setStep(3);
+      }
+    } else {
+      // Generate simulated 6-digit verification code
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      setSentCode(code);
+      
+      // Send email to student
+      sendMockEmail(
+        formData.email,
+        'OmniProctor Verification Code',
+        'email_verification',
+        `Dear ${formData.fullName},\n\nThank you for registering at OmniProctor.ai.\n\nYour 6-digit email verification code is: ${code}\n\nPlease enter this code in the registration panel to activate your account.\n\nBest regards,\nOmniProctor.ai Team`
+      );
+
+      // Toast code so they can verify without looking at logs if needed
+      addToast('Verification Sent', `Verification code sent to ${formData.email}. Mock code is: ${code}`, 'info');
+      setStep(3);
+    }
+  };
+
+  const handleVerifyCode = async (e) => {
+    e.preventDefault();
+    if (apiActive) {
+      const result = await verifyStudentOtp(formData.email, userVerificationCode);
+      if (result.success) {
         onBackToLogin();
       }
     } else {
-      addToast('Verification Failed', 'Invalid verification code. Please check your email outbox logs.', 'danger');
+      if (userVerificationCode === sentCode) {
+        // Register student in context state
+        const result = await registerStudent({
+          ...formData,
+          collegeId: selectedCollege.id
+        });
+        if (result.success) {
+          onBackToLogin();
+        }
+      } else {
+        addToast('Verification Failed', 'Invalid verification code. Please check your email outbox logs.', 'danger');
+      }
     }
   };
 
@@ -455,17 +472,31 @@ const StudentRegister = ({ onBackToLogin }) => {
                   A verification email has been dispatched to <strong>{formData.email}</strong>.
                   Enter the 6-digit activation code sent to your inbox.
                 </p>
-                <div style={{
-                  marginTop: '0.5rem',
-                  fontSize: '0.75rem',
-                  color: 'var(--color-warning)',
-                  background: 'var(--color-warning-light)',
-                  padding: '0.5rem',
-                  borderRadius: '4px',
-                  display: 'inline-block'
-                }}>
-                  Interactive Simulation: check out the SMTP outbox logs or copy the toast alert code. Code is <strong>{sentCode}</strong>.
-                </div>
+                {apiActive ? (
+                  <div style={{
+                    marginTop: '0.5rem',
+                    fontSize: '0.75rem',
+                    color: 'var(--color-success)',
+                    background: 'var(--color-success-light)',
+                    padding: '0.5rem 1rem',
+                    borderRadius: '4px',
+                    display: 'inline-block'
+                  }}>
+                    Live Environment: Please check your email inbox or the Admin Email Outbox Log.
+                  </div>
+                ) : (
+                  <div style={{
+                    marginTop: '0.5rem',
+                    fontSize: '0.75rem',
+                    color: 'var(--color-warning)',
+                    background: 'var(--color-warning-light)',
+                    padding: '0.5rem',
+                    borderRadius: '4px',
+                    display: 'inline-block'
+                  }}>
+                    Interactive Simulation: check out the SMTP outbox logs or copy the toast alert code. Code is <strong>{sentCode}</strong>.
+                  </div>
+                )}
               </div>
 
               <div className="form-group" style={{ maxWidth: '280px', margin: '0 auto', width: '100%' }}>
