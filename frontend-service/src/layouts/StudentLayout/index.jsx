@@ -965,7 +965,7 @@ Result State: ${attempt.status.toUpperCase()}
                   <CheckCircle size={56} style={{ color: 'var(--color-success)', marginInline: 'auto' }} />
                   <h2 style={{ marginTop: '1rem' }}>Exam Completed Successfully</h2>
                   <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                    Your paper was submitted. Grade results will be visible once published by faculty.
+                    Your paper was submitted. Grade results will be visible once published by college admin.
                   </p>
                 </>
               )}

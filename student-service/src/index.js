@@ -322,6 +322,26 @@ app.post('/api/students/:id/resend-credentials', authenticate, authorize(['manag
     return res.status(403).json({ message: 'Unauthorized.' });
   }
 
+  if (student.status === 'pending') {
+    const newOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    const newOtpExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+    await studentCols.updateOne({ id: student.id }, {
+      otp: newOtp,
+      otpExpires: newOtpExpires,
+      otpRetries: 0
+    });
+
+    await queueEmail(
+      student.email,
+      'Invitation to OmniProctor Exam Platform',
+      'student_invitation',
+      `Dear ${student.name},\n\nYou have been invited by your college administration to join the OmniProctor Online Examination Platform.\n\nPlease click the link below to set your password, verify your email, and activate your student account:\nhttp://localhost:5173/activate?email=${student.email}&otp=${newOtp}\n\nAlternatively, you can go to http://localhost:5173/activate and enter the following details:\nEmail: ${student.email}\nVerification OTP: ${newOtp}\n\nThis invitation link and verification code is valid for 24 hours.\n\nBest regards,\nOmniProctor Team`
+    );
+
+    return res.json({ message: 'Invitation email containing activation link resent successfully.' });
+  }
+
   await queueEmail(
     student.email,
     'OmniProctor Account Credentials - Reminder',
@@ -434,10 +454,8 @@ app.post('/api/students/import', authenticate, authorize(['management']), upload
         continue;
       }
 
-      const cleanName = fullName.replace(/[^a-zA-Z]/g, '');
-      const prefix = cleanName.charAt(0).toUpperCase() + cleanName.slice(1, 5).toLowerCase();
-      const num = Math.floor(1000 + Math.random() * 9000);
-      const tempPassword = `${prefix}@${num}`;
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours validity for invites
 
       imported.push({
         id: rollNumber,
@@ -450,12 +468,14 @@ app.post('/api/students/import', authenticate, authorize(['management']), upload
         gender,
         collegeId,
         collegeName,
-        password: bcrypt.hashSync(tempPassword, 8),
-        mustResetPassword: true,
-        verified: true,
-        status: 'active',
-        createdAt: new Date().toISOString(),
-        tempPasswordDisplay: tempPassword
+        password: '', // will be set during activation
+        mustResetPassword: false,
+        verified: false,
+        status: 'pending',
+        otp,
+        otpExpires,
+        otpRetries: 0,
+        createdAt: new Date().toISOString()
       });
     }
 
@@ -465,9 +485,9 @@ app.post('/api/students/import', authenticate, authorize(['management']), upload
       for (const stud of imported) {
         await queueEmail(
           stud.email,
-          'OmniProctor Account Activated - Batch Import',
-          'student_import_credentials',
-          `Dear ${stud.name},\n\nYour account has been provisioned on OmniProctor by your College Admin.\n\n=== YOUR LOGIN CREDENTIALS ===\nUser ID/Roll Number: ${stud.rollNumber}\nTemporary Password: ${stud.tempPasswordDisplay}\n\nPlease reset your password upon first login.\n\nBest regards,\nOmniProctor Team`
+          'Invitation to OmniProctor Exam Platform',
+          'student_invitation',
+          `Dear ${stud.name},\n\nYou have been invited by your college administration to join the OmniProctor Online Examination Platform.\n\nPlease click the link below to set your password, verify your email, and activate your student account:\nhttp://localhost:5173/activate?email=${stud.email}&otp=${stud.otp}\n\nAlternatively, you can go to http://localhost:5173/activate and enter the following details:\nEmail: ${stud.email}\nVerification OTP: ${stud.otp}\n\nThis invitation link and verification code is valid for 24 hours.\n\nBest regards,\nOmniProctor Team`
         );
       }
     }
@@ -485,7 +505,7 @@ app.post('/api/students/import', authenticate, authorize(['management']), upload
         rollNumber: s.rollNumber,
         branch: s.branch,
         year: s.year,
-        tempPassword: s.tempPasswordDisplay
+        activationOtp: s.otp
       }))
     });
   } catch (err) {

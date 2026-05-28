@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { usePlatform } from '../../../contexts/PlatformContext';
 import { ShieldCheck, Mail, Lock, LogIn, Sparkles, UserPlus, Eye, EyeOff } from 'lucide-react';
 import StudentRegister from '../RegisterForm';
+import StudentActivation from '../ActivationForm';
 
 const Login = () => {
   const { login } = usePlatform();
@@ -10,6 +11,14 @@ const Login = () => {
   const [password, setPassword] = useState('admin123');
   const [showPassword, setShowPassword] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [isActivating, setIsActivating] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('email') && params.get('otp')) {
+      setIsActivating(true);
+    }
+  }, []);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -24,6 +33,10 @@ const Login = () => {
 
   if (isRegistering) {
     return <StudentRegister onBackToLogin={() => setIsRegistering(false)} />;
+  }
+
+  if (isActivating) {
+    return <StudentActivation onBackToLogin={() => setIsActivating(false)} />;
   }
 
   return (
@@ -143,28 +156,47 @@ const Login = () => {
             </button>
           </form>
 
-          {/* Student registration trigger */}
+          {/* Student registration / activation triggers */}
           <div style={{
             borderTop: '1px solid var(--border-color)',
             marginTop: '1.5rem',
             paddingTop: '1.25rem',
             textAlign: 'center'
           }}>
-            <button
-              onClick={() => setIsRegistering(true)}
-              className="btn btn-secondary"
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '0.5rem',
-                backgroundColor: 'rgba(255, 255, 255, 0.03)'
-              }}
-            >
-              <UserPlus size={16} />
-              New Student? Self Register Here
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <button
+                onClick={() => setIsRegistering(true)}
+                className="btn btn-secondary"
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  backgroundColor: 'rgba(255, 255, 255, 0.03)'
+                }}
+              >
+                <UserPlus size={16} />
+                New Student? Self Register Here
+              </button>
+
+              <button
+                onClick={() => setIsActivating(true)}
+                className="btn btn-secondary"
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                  borderColor: 'rgba(59, 130, 246, 0.25)'
+                }}
+              >
+                <ShieldCheck size={16} style={{ color: 'var(--color-primary)' }} />
+                Have an Invite? Activate Account
+              </button>
+            </div>
           </div>
         </div>
 

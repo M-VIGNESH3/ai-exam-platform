@@ -48,13 +48,7 @@ const Login = () => {
                 className={`role-pill ${role === 'management' ? 'active' : ''}`}
                 onClick={() => handleAutofill('management', 'admin@ics.edu')}
               >
-                Management
-              </div>
-              <div
-                className={`role-pill ${role === 'faculty' ? 'active' : ''}`}
-                onClick={() => handleAutofill('faculty', 'sarah.c@ics.edu')}
-              >
-                Faculty
+                College Admin
               </div>
               <div
                 className={`role-pill ${role === 'student' ? 'active' : ''}`}
@@ -193,23 +187,7 @@ const Login = () => {
             >
               <strong>College Management:</strong> <span>admin@ics.edu</span>
             </button>
-            <button
-              onClick={() => handleAutofill('faculty', 'sarah.c@ics.edu')}
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                padding: '0.4rem 0.6rem',
-                fontSize: '0.75rem',
-                border: '1px solid var(--border-color)',
-                borderRadius: 'var(--radius-sm)',
-                backgroundColor: 'var(--bg-surface)',
-                cursor: 'pointer',
-                textAlign: 'left'
-              }}
-            >
-              <strong>Faculty (Dr. Connor):</strong> <span>sarah.c@ics.edu</span>
-            </button>
-            <button
+             <button
               onClick={() => handleAutofill('student', 'john.doe@student.edu')}
               style={{
                 display: 'flex',

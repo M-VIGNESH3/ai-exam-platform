@@ -379,6 +379,45 @@ app.post('/api/auth/verify-otp', async (req, res) => {
   return res.json({ message: 'Account activated successfully! You can now log in.' });
 });
 
+// Activate Student from Invitation
+app.post('/api/auth/activate-student', async (req, res) => {
+  const { email, password, otp } = req.body;
+  if (!email || !password || !otp) {
+    return res.status(400).json({ message: 'Email, password and verification OTP are required' });
+  }
+
+  const studentCols = getCollection('students');
+  const student = await studentCols.findOne({ email: email.toLowerCase() });
+  if (!student) {
+    return res.status(404).json({ message: 'Student account not found' });
+  }
+
+  if (student.verified && student.status === 'active') {
+    return res.status(400).json({ message: 'Account is already activated. Please login directly.' });
+  }
+
+  if (new Date() > new Date(student.otpExpires)) {
+    return res.status(400).json({ message: 'Activation code has expired. Please contact your administrator or request a new code.' });
+  }
+
+  if (student.otp !== otp) {
+    return res.status(400).json({ message: 'Invalid activation code/OTP.' });
+  }
+
+  const hashedPassword = bcrypt.hashSync(password, 8);
+
+  await studentCols.updateOne({ id: student.id }, {
+    password: hashedPassword,
+    verified: true,
+    status: 'active',
+    otp: null,
+    otpExpires: null,
+    otpRetries: 0
+  });
+
+  return res.json({ message: 'Your account has been activated successfully! You can now log in.' });
+});
+
 // Resend OTP
 app.post('/api/auth/resend-otp', async (req, res) => {
   const { email } = req.body;

@@ -11,10 +11,6 @@ const ManagementPortal = () => {
   const {
     currentUser,
     logout,
-    teachers,
-    addTeacher,
-    toggleTeacherStatus,
-    resetTeacherPassword,
     students,
     addStudent,
     toggleStudentStatus,
@@ -89,16 +85,6 @@ const ManagementPortal = () => {
   const [terminateReason, setTerminateReason] = useState('Secondary screen detected');
 
   // Form Validations
-  const handleTeacherSubmit = (e) => {
-    e.preventDefault();
-    if (!teacherForm.name.trim() || !teacherForm.email.trim() || !teacherForm.subject.trim()) {
-      addToast('Validation Error', 'All fields are required.', 'danger');
-      return;
-    }
-    addTeacher(teacherForm);
-    setTeacherForm({ name: '', email: '', department: 'Computer Science & Engineering', subject: '' });
-  };
-
   const handleStudentSubmit = (e) => {
     e.preventDefault();
     if (!studentForm.name.trim() || !studentForm.email.trim() || !studentForm.rollNumber.trim()) {
@@ -251,7 +237,6 @@ const ManagementPortal = () => {
   // Active / finished stats
   const activeExams = exams.length;
   const totalStudents = students.length;
-  const totalTeachers = teachers.length;
   const terminatedExamsCount = attempts.filter(att => att.status === 'terminated').length;
 
   return (
@@ -345,16 +330,6 @@ const ManagementPortal = () => {
         {activeTab === 'dashboard' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <div className="stats-grid">
-              <div className="stat-card">
-                <div className="stat-icon-wrapper" style={{ backgroundColor: 'var(--color-primary-light)', color: 'var(--color-primary)' }}>
-                  <Users size={24} />
-                </div>
-                <div className="stat-info">
-                  <span className="stat-label">Faculty Accounts</span>
-                  <span className="stat-value">{totalTeachers}</span>
-                </div>
-              </div>
-
               <div className="stat-card">
                 <div className="stat-icon-wrapper" style={{ backgroundColor: 'var(--color-success-light)', color: 'var(--color-success)' }}>
                   <UserCheck size={24} />
@@ -525,8 +500,8 @@ const ManagementPortal = () => {
                             <td>{s.department || 'General'}</td>
                             <td><span className="badge badge-info">{batch ? batch.name : 'Unassigned'}</span></td>
                             <td>
-                              <span className={`badge ${s.status === 'active' ? 'badge-success' : 'badge-danger'}`}>
-                                {s.status === 'active' ? 'Active' : 'Inactive'}
+                              <span className={`badge ${s.status === 'active' ? 'badge-success' : s.status === 'pending' ? 'badge-info' : 'badge-danger'}`}>
+                                {s.status === 'active' ? 'Active' : s.status === 'pending' ? 'Pending Invite' : 'Inactive'}
                               </span>
                             </td>
                             <td style={{ textAlign: 'right' }}>
@@ -536,25 +511,27 @@ const ManagementPortal = () => {
                                   onClick={() => toggleStudentStatus(s.id)}
                                   style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
                                 >
-                                  {s.status === 'active' ? 'Deactivate' : 'Activate'}
+                                  {s.status === 'active' ? 'Deactivate' : s.status === 'pending' ? 'Suspend Invite' : 'Activate'}
                                 </button>
-                                <button
-                                  className="btn btn-secondary btn-sm"
-                                  onClick={() => {
-                                    if (window.confirm(`Force password reset for student ${s.name}?`)) {
-                                      forceResetStudentPassword(s.id);
-                                    }
-                                  }}
-                                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'var(--color-warning)', borderColor: 'rgba(255, 193, 7, 0.2)' }}
-                                >
-                                  <Key size={12} style={{ marginRight: '0.25rem' }} /> Reset
-                                </button>
+                                {s.status !== 'pending' && (
+                                  <button
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => {
+                                      if (window.confirm(`Force password reset for student ${s.name}?`)) {
+                                        forceResetStudentPassword(s.id);
+                                      }
+                                    }}
+                                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'var(--color-warning)', borderColor: 'rgba(255, 193, 7, 0.2)' }}
+                                  >
+                                    <Key size={12} style={{ marginRight: '0.25rem' }} /> Reset
+                                  </button>
+                                )}
                                 <button
                                   className="btn btn-secondary btn-sm"
                                   onClick={() => resendStudentCredentials(s.id)}
                                   style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
                                 >
-                                  <Mail size={12} style={{ marginRight: '0.25rem' }} /> Resend
+                                  <Mail size={12} style={{ marginRight: '0.25rem' }} /> {s.status === 'pending' ? 'Resend Invite' : 'Resend Credentials'}
                                 </button>
                               </div>
                             </td>
@@ -748,7 +725,6 @@ const ManagementPortal = () => {
                       <label className="form-label">Data Schema Format</label>
                       <select className="form-control form-select" value={uploadType} onChange={(e) => { setUploadType(e.target.value); setUploadResult(null); }}>
                         <option value="student">Student Registry</option>
-                        <option value="teacher">Faculty Registry</option>
                         <option value="question">Question Bank (MCQs)</option>
                       </select>
                     </div>
@@ -862,21 +838,12 @@ const ManagementPortal = () => {
                   Please match the CSV/spreadsheet column headers exactly to avoid file parsing errors. Download samples below:
                 </p>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                   <div style={{ border: '1px solid var(--border-color)', padding: '1rem', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                     <Users size={20} style={{ color: 'var(--color-primary)' }} />
                     <strong style={{ fontSize: '0.9rem' }}>Student Template</strong>
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Name, Email, Roll Number, Department, Year, Batch</span>
                     <button className="btn btn-secondary btn-sm" onClick={() => downloadSampleTemplate('student')} style={{ marginTop: '0.5rem' }}>
-                      <Download size={12} /> Download CSV
-                    </button>
-                  </div>
-
-                  <div style={{ border: '1px solid var(--border-color)', padding: '1rem', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    <UserCheck size={20} style={{ color: 'var(--color-success)' }} />
-                    <strong style={{ fontSize: '0.9rem' }}>Teacher Template</strong>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Name, Email, Department, Subject</span>
-                    <button className="btn btn-secondary btn-sm" onClick={() => downloadSampleTemplate('teacher')} style={{ marginTop: '0.5rem' }}>
                       <Download size={12} /> Download CSV
                     </button>
                   </div>

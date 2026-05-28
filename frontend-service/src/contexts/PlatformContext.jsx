@@ -733,6 +733,46 @@ export const PlatformProvider = ({ children }) => {
     return false;
   };
 
+  const activateStudent = async (email, password, otp) => {
+    if (apiActive) {
+      try {
+        await apiRequest('/auth/activate-student', 'POST', { email, password, otp });
+        addToast('Account Activated', 'Your student account is active! You can now log in.', 'success');
+        return true;
+      } catch (err) {
+        addToast('Activation Failed', err.message, 'danger');
+        return false;
+      }
+    }
+
+    // Local Fallback Simulation
+    const student = students.find(s => s.email.toLowerCase() === email.toLowerCase());
+    if (!student) {
+      addToast('Activation Failed', 'Student not found in offline registers.', 'danger');
+      return false;
+    }
+    if (student.otp !== otp) {
+      addToast('Activation Failed', 'Invalid verification code/OTP.', 'danger');
+      return false;
+    }
+
+    setStudents(prev => prev.map(s => {
+      if (s.email.toLowerCase() === email.toLowerCase()) {
+        return {
+          ...s,
+          password: hashPassword(password),
+          verified: true,
+          status: 'active',
+          otp: null
+        };
+      }
+      return s;
+    }));
+
+    addToast('Account Activated', 'Your student account is active (Offline)! You can now log in.', 'success');
+    return true;
+  };
+
   // Audit log helper
   const logAuditEvent = (action, actor, target, details) => {
     const entry = {
@@ -1189,50 +1229,6 @@ export const PlatformProvider = ({ children }) => {
   };
 
   // Management Operations (Create user, Bulk Upload, Schedule Exam)
-  const addTeacher = (teacherData) => {
-    if (!teacherData.name || !teacherData.email || !teacherData.subject) {
-      addToast('Validation Error', 'Missing required faculty fields.', 'danger');
-      return;
-    }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(teacherData.email)) {
-      addToast('Validation Error', 'Invalid email format.', 'danger');
-      return;
-    }
-    if (teachers.some(t => t.email.toLowerCase() === teacherData.email.toLowerCase())) {
-      addToast('Validation Error', 'Email already registered.', 'danger');
-      return;
-    }
-
-    const tempPassword = generateTempPassword(teacherData.name);
-    const newTeacher = {
-      id: uid('t'),
-      name: teacherData.name,
-      email: teacherData.email,
-      department: teacherData.department,
-      subject: teacherData.subject,
-      status: 'active',
-      password: hashPassword(tempPassword),
-      mustResetPassword: true,
-      createdAt: new Date().toISOString(),
-      createdBy: currentUser?.name || 'System',
-      tempPasswordDisplay: tempPassword
-    };
-    setTeachers(prev => [...prev, newTeacher]);
-
-    logAuditEvent('faculty_account_created', currentUser?.name || 'System', newTeacher.email, `Faculty "${newTeacher.name}" created with temp password. mustResetPassword=true.`);
-
-    sendMockEmail(
-      newTeacher.email,
-      'Your OmniFaculty.ai Credentials',
-      'account_created',
-      `Dear Prof. ${newTeacher.name},\n\nYour faculty portal account has been created.\n\n=== YOUR LOGIN CREDENTIALS ===\nLogin URL: ${window.location.origin}\nEmail: ${newTeacher.email}\nTemporary Password: ${tempPassword}\n\nIMPORTANT: You MUST reset your password on first login.\n\nFor support: support@omniproctor.ai`
-    );
-
-    triggerNotification('management', 'global', 'Faculty Account Provisioned', `Faculty account for ${newTeacher.name} (${newTeacher.email}) has been created.`);
-    addToast('Teacher Registered', `Account created for Prof. ${teacherData.name}. Temp password: ${tempPassword}`, 'success');
-  };
-
   const addStudent = (studentData) => {
     if (!studentData.name || !studentData.email || !studentData.rollNumber) {
       addToast('Validation Error', 'Missing required student fields.', 'danger');
@@ -1289,22 +1285,6 @@ export const PlatformProvider = ({ children }) => {
 
     triggerNotification('management', 'global', 'Student Account Provisioned', `Student account for ${newStudent.name} (${newStudent.rollNumber}) has been created.`);
     addToast('Student Registered', `Account created for ${studentData.name}. Temp password: ${tempPassword}`, 'success');
-  };
-
-  const toggleTeacherStatus = (id) => {
-    setTeachers(prev => prev.map(t => t.id === id ? { ...t, status: t.status === 'active' ? 'inactive' : 'active' } : t));
-    addToast('Status Updated', 'Teacher activity state toggled.', 'info');
-  };
-
-  const resetTeacherPassword = (email) => {
-    const tempPassword = Math.random().toString(36).substring(2, 10);
-    sendMockEmail(
-      email,
-      'Password Reset Confirmation',
-      'password_reset',
-      `Dear User,\n\nYour password has been reset.\nTemporary password: ${tempPassword}`
-    );
-    addToast('Password Reset Link Sent', `Email instructions dispatched to ${email}.`, 'success');
   };
 
   const processBulkUpload = (fileType, dataString) => {
@@ -1429,69 +1409,6 @@ export const PlatformProvider = ({ children }) => {
               'Your Assessment Portal Credentials',
               'account_created',
               `Dear ${r.name},\n\nYour account has been setup via bulk import.\nEmail: ${r.email}\nTemporary Password: ${r.tempPasswordCleartext}\nLogin URL: http://localhost:5173/\n\nPlease log in and update your password on first entry.`
-            );
-          });
-        }
-
-      } else if (fileType === 'teacher') {
-        const nameIdx = headers.findIndex(h => h.includes('name'));
-        const emailIdx = headers.findIndex(h => h.includes('email'));
-        const deptIdx = headers.findIndex(h => h.includes('dept') || h.includes('department'));
-        const subjIdx = headers.findIndex(h => h.includes('sub') || h.includes('subject'));
-
-        if (nameIdx === -1 || emailIdx === -1) {
-          throw new Error('Required columns: Name, Email are missing.');
-        }
-
-        for (let i = 1; i < rows.length; i++) {
-          const rowData = rows[i];
-          const name = rowData[nameIdx];
-          const email = rowData[emailIdx];
-          const dept = deptIdx !== -1 ? rowData[deptIdx] : 'Computer Science & Engineering';
-          const subj = subjIdx !== -1 ? rowData[subjIdx] : 'General Subjects';
-
-          if (!name || !email) {
-            rowErrors.push({ row: i + 1, error: 'Empty Name or Email field.' });
-            continue;
-          }
-
-          if (!emailRegex.test(email)) {
-            rowErrors.push({ row: i + 1, error: `Invalid email structure: ${email}` });
-            continue;
-          }
-
-          const existingDb = teachers.some(t => t.email.toLowerCase() === email.toLowerCase());
-          const existingPending = records.some(r => r.email.toLowerCase() === email.toLowerCase());
-
-          if (existingDb || existingPending) {
-            duplicates++;
-            rowErrors.push({ row: i + 1, error: `Duplicate email: ${email}` });
-            continue;
-          }
-
-          const tempPass = generateTempPassword(name);
-
-          records.push({
-            id: 't' + (teachers.length + records.length + 1),
-            name,
-            email,
-            department: dept,
-            subject: subj,
-            status: 'active',
-            password: hashPassword(tempPass),
-            tempPasswordCleartext: tempPass,
-            mustResetPassword: true
-          });
-        }
-
-        if (records.length > 0) {
-          setTeachers(prev => [...prev, ...records.map(({ tempPasswordCleartext, ...r }) => r)]);
-          records.forEach(r => {
-            sendMockEmail(
-              r.email,
-              'Your Faculty Portal Credentials',
-              'account_created',
-              `Dear Prof. ${r.name},\n\nYour teacher account has been configured.\nEmail: ${r.email}\nTemporary Password: ${r.tempPasswordCleartext}\nLogin: http://localhost:5173/\n\nPlease log in and update your password on first entry.`
             );
           });
         }
@@ -1672,7 +1589,7 @@ export const PlatformProvider = ({ children }) => {
     }
   };
 
-  // Faculty Operations
+  // Question Bank Operations
   const addQuestion = (questionData) => {
     const newQ = {
       id: uid('q'),
@@ -2001,7 +1918,6 @@ export const PlatformProvider = ({ children }) => {
       departments,
       batches,
       managementAdmins,
-      teachers,
       students,
       questions,
       exams,
@@ -2016,6 +1932,7 @@ export const PlatformProvider = ({ children }) => {
       retryFailedEmails,
       clearEmailLogs,
       resetInitialPassword,
+      activateStudent,
       toasts,
       theme,
       setTheme,
@@ -2028,10 +1945,7 @@ export const PlatformProvider = ({ children }) => {
       addManagementAdmin,
       addDepartment,
       createBatch,
-      addTeacher,
       addStudent,
-      toggleTeacherStatus,
-      resetTeacherPassword,
       toggleStudentStatus,
       forceResetStudentPassword,
       resendStudentCredentials,
