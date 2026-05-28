@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { usePlatform } from '../../contexts/PlatformContext';
-import { ShieldAlert, Lock, CheckCircle, XCircle, LogOut } from 'lucide-react';
+import { ShieldAlert, Lock, CheckCircle, XCircle, LogOut, Eye, EyeOff } from 'lucide-react';
 
 const ForcedPasswordReset = () => {
   const { currentUser, resetInitialPassword, logout } = usePlatform();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   // Password Validation Criteria
   const hasMinLength = newPassword.length >= 8;
@@ -69,9 +71,9 @@ const ForcedPasswordReset = () => {
                 />
                 <input
                   id="new-password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   className="form-control"
-                  style={{ paddingLeft: '2.5rem' }}
+                  style={{ paddingLeft: '2.5rem', paddingRight: '2.5rem' }}
                   placeholder="••••••••"
                   value={newPassword}
                   onChange={(e) => {
@@ -80,6 +82,25 @@ const ForcedPasswordReset = () => {
                   }}
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    position: 'absolute',
+                    right: '0.85rem',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: 0
+                  }}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
             </div>
 
@@ -98,9 +119,9 @@ const ForcedPasswordReset = () => {
                 />
                 <input
                   id="confirm-password"
-                  type="password"
+                  type={showConfirmPassword ? 'text' : 'password'}
                   className="form-control"
-                  style={{ paddingLeft: '2.5rem' }}
+                  style={{ paddingLeft: '2.5rem', paddingRight: '2.5rem' }}
                   placeholder="••••••••"
                   value={confirmPassword}
                   onChange={(e) => {
@@ -109,6 +130,25 @@ const ForcedPasswordReset = () => {
                   }}
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  style={{
+                    position: 'absolute',
+                    right: '0.85rem',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: 0
+                  }}
+                >
+                  {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
             </div>
 

@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { usePlatform } from '../../contexts/PlatformContext';
-import { ShieldCheck, Mail, Lock, LogIn, Sparkles } from 'lucide-react';
+import { ShieldCheck, Mail, Lock, LogIn, Sparkles, Eye, EyeOff } from 'lucide-react';
 
 const Login = () => {
   const { login } = usePlatform();
   const [role, setRole] = useState('management'); // Default to management, the most important role
   const [email, setEmail] = useState('admin@ics.edu');
   const [password, setPassword] = useState('admin123');
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -106,14 +107,33 @@ const Login = () => {
                 />
                 <input
                   id="password-input"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   className="form-control"
-                  style={{ paddingLeft: '2.5rem' }}
+                  style={{ paddingLeft: '2.5rem', paddingRight: '2.5rem' }}
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    position: 'absolute',
+                    right: '0.85rem',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: 0
+                  }}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
             </div>
 
