@@ -306,7 +306,7 @@ app.post('/api/colleges', authenticate, authorize(['super_admin']), async (req, 
     message: 'College and Administrator onboarded successfully.',
     college: newCollege,
     admin: {
-      email: newAdmin.email,
+      ...newAdmin,
       tempPassword
     }
   });
@@ -347,6 +347,72 @@ app.patch('/api/colleges/:id/status', authenticate, authorize(['super_admin']), 
   });
 
   return res.json({ message: `College status updated to ${nextStatus}.` });
+});
+
+// Force Reset Management Admin Password
+app.post('/api/colleges/admins/:id/force-reset', authenticate, authorize(['super_admin']), async (req, res) => {
+  const { id } = req.params;
+  const adminCols = getCollection('managementAdmins');
+  const admin = await adminCols.findOne({ id });
+
+  if (!admin) {
+    return res.status(404).json({ message: 'Management Admin not found.' });
+  }
+
+  const cleanName = admin.name.replace(/[^a-zA-Z]/g, '');
+  const prefix = cleanName.charAt(0).toUpperCase() + cleanName.slice(1, 5).toLowerCase();
+  const specialChars = '@#$';
+  const special = specialChars.charAt(Math.floor(Math.random() * specialChars.length));
+  const num = Math.floor(1000 + Math.random() * 9000);
+  const tempPassword = `${prefix}${special}${num}`;
+
+  await adminCols.updateOne({ id }, {
+    password: bcrypt.hashSync(tempPassword, 8),
+    mustResetPassword: true,
+    tempPasswordDisplay: tempPassword
+  });
+
+  await queueEmail(
+    admin.email,
+    'Your Credentials Have Been Reset by Super Administrator',
+    'password_force_reset',
+    `Dear ${admin.name},\n\nYour management admin account password has been reset by the Super Administrator.\n\n=== YOUR NEW TEMPORARY PASSWORD ===\nEmail: ${admin.email}\nTemporary Password: ${tempPassword}\n\nYou must reset this password upon signing in.\n\nBest regards,\nOmniProctor Support Team`
+  );
+
+  const auditLogs = getCollection('auditLogs');
+  await auditLogs.insertOne({
+    id: 'aud_' + Date.now(),
+    action: 'admin_password_reset',
+    performedBy: req.user.name,
+    target: admin.name,
+    details: `Password force reset for admin ${admin.name}.`,
+    timestamp: new Date().toISOString()
+  });
+
+  return res.json({
+    message: `Password successfully reset. New credentials emailed to administrator.`,
+    tempPassword
+  });
+});
+
+// Resend Management Admin Credentials
+app.post('/api/colleges/admins/:id/resend-credentials', authenticate, authorize(['super_admin']), async (req, res) => {
+  const { id } = req.params;
+  const adminCols = getCollection('managementAdmins');
+  const admin = await adminCols.findOne({ id });
+
+  if (!admin) {
+    return res.status(404).json({ message: 'Management Admin not found.' });
+  }
+
+  await queueEmail(
+    admin.email,
+    'OmniProctor Institution Admin Credentials - Reminder',
+    'college_admin_reminder',
+    `Dear ${admin.name},\n\nThis is a reminder of your administrator credentials for college: ${admin.collegeName}.\nUsername: ${admin.email}\nTemporary Password: ${admin.tempPasswordDisplay || 'Previously configured'}\n\nBest regards,\nOmniProctor Support Team`
+  );
+
+  return res.json({ message: 'Admin welcome email reminder queued successfully.' });
 });
 
 app.listen(PORT, () => {

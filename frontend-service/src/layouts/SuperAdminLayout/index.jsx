@@ -38,9 +38,9 @@ const SuperAdminPortal = () => {
   const [noFaceWarnTime, setNoFaceWarnTime] = useState(5);
   const [alertSeverityThreshold, setAlertSeverityThreshold] = useState('medium');
 
-  const handleCreateCollege = (e) => {
+  const handleCreateCollege = async (e) => {
     e.preventDefault();
-    const result = onboardCollege(formData);
+    const result = await onboardCollege(formData);
     if (result && result.success) {
       setCredentialsModal({
         email: result.adminEmail,

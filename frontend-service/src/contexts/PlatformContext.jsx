@@ -767,7 +767,7 @@ export const PlatformProvider = ({ children }) => {
   };
 
   // Global Super Admin Operations
-  const onboardCollege = (collegeData) => {
+  const onboardCollege = async (collegeData) => {
     const {
       college_name,
       college_code,
@@ -789,67 +789,92 @@ export const PlatformProvider = ({ children }) => {
       return { success: false, error: 'Invalid email format.' };
     }
 
-    if (colleges.some(c => c.code.toLowerCase() === college_code.toLowerCase())) {
-      addToast('Validation Error', 'College code already exists.', 'danger');
-      return { success: false, error: 'College code already exists.' };
+    if (apiActive) {
+      try {
+        const token = localStorage.getItem('access_token');
+        const res = await apiRequest('/colleges', 'POST', collegeData, token);
+        
+        setColleges(prev => [...prev, res.college]);
+        
+        const newAdmin = {
+          ...res.admin,
+          tempPasswordDisplay: res.admin.tempPassword
+        };
+        setManagementAdmins(prev => [...prev, newAdmin]);
+        
+        addToast('College Onboarded', res.message, 'success');
+        return {
+          success: true,
+          tempPassword: res.admin.tempPassword,
+          adminEmail: res.admin.email
+        };
+      } catch (err) {
+        addToast('Onboarding Failed', err.message, 'danger');
+        return { success: false, error: err.message };
+      }
+    } else {
+      if (colleges.some(c => c.code.toLowerCase() === college_code.toLowerCase())) {
+        addToast('Validation Error', 'College code already exists.', 'danger');
+        return { success: false, error: 'College code already exists.' };
+      }
+
+      if (managementAdmins.some(a => a.email.toLowerCase() === admin_email.toLowerCase())) {
+        addToast('Validation Error', 'Admin email already registered.', 'danger');
+        return { success: false, error: 'Admin email already registered.' };
+      }
+
+      const collegeId = uid('c');
+      const newCollege = {
+        id: collegeId,
+        name: college_name,
+        code: college_code,
+        email: college_email,
+        phone: college_phone || '',
+        address: address || '',
+        status: 'active',
+        departmentCount: 0,
+        examCount: 0,
+        createdAt: new Date().toISOString()
+      };
+
+      const tempPassword = generateTempPassword(admin_name);
+      const newAdmin = {
+        id: uid('m'),
+        collegeId: collegeId,
+        collegeName: college_name,
+        name: admin_name,
+        email: admin_email,
+        role: 'management', // College Admin role
+        department: 'All',
+        password: hashPassword(tempPassword),
+        mustResetPassword: true,
+        createdAt: new Date().toISOString(),
+        createdBy: currentUser?.name || 'System',
+        tempPasswordDisplay: tempPassword
+      };
+
+      setColleges(prev => [...prev, newCollege]);
+      setManagementAdmins(prev => [...prev, newAdmin]);
+
+      logAuditEvent('college_onboarded', currentUser?.name || 'System', college_name, `College ${college_name} (${college_code}) onboarded.`);
+      logAuditEvent('management_account_created', currentUser?.name || 'System', admin_email, `Admin account for ${college_name} generated.`);
+
+      sendMockEmail(
+        admin_email,
+        `Your College Admin Credentials - ${college_name}`,
+        'account_created',
+        `Dear ${admin_name},\n\nYour management dashboard account has been created for ${college_name}.\n\n=== YOUR LOGIN CREDENTIALS ===\nLogin URL: ${window.location.origin}\nEmail: ${admin_email}\nTemporary Password: ${tempPassword}\n\nIMPORTANT: You MUST reset your password on first login.\n\nFor support: support@omniproctor.ai`
+      );
+
+      triggerNotification('management', 'global', 'New Admin Account Created', `College Admin account for ${admin_name} has been provisioned.`);
+      addToast('College Onboarded', `${college_name} successfully registered.`, 'success');
+
+      return {
+        success: true,
+        tempPassword,
+        adminEmail: admin_email
+      };
     }
-
-    if (managementAdmins.some(a => a.email.toLowerCase() === admin_email.toLowerCase())) {
-      addToast('Validation Error', 'Admin email already registered.', 'danger');
-      return { success: false, error: 'Admin email already registered.' };
-    }
-
-    const collegeId = uid('c');
-    const newCollege = {
-      id: collegeId,
-      name: college_name,
-      code: college_code,
-      email: college_email,
-      phone: college_phone || '',
-      address: address || '',
-      status: 'active',
-      departmentCount: 0,
-      examCount: 0,
-      createdAt: new Date().toISOString()
-    };
-
-    const tempPassword = generateTempPassword(admin_name);
-    const newAdmin = {
-      id: uid('m'),
-      collegeId: collegeId,
-      collegeName: college_name,
-      name: admin_name,
-      email: admin_email,
-      role: 'management', // College Admin role
-      department: 'All',
-      password: hashPassword(tempPassword),
-      mustResetPassword: true,
-      createdAt: new Date().toISOString(),
-      createdBy: currentUser?.name || 'System',
-      tempPasswordDisplay: tempPassword
-    };
-
-    setColleges(prev => [...prev, newCollege]);
-    setManagementAdmins(prev => [...prev, newAdmin]);
-
-    logAuditEvent('college_onboarded', currentUser?.name || 'System', college_name, `College ${college_name} (${college_code}) onboarded.`);
-    logAuditEvent('management_account_created', currentUser?.name || 'System', admin_email, `Admin account for ${college_name} generated.`);
-
-    sendMockEmail(
-      admin_email,
-      `Your College Admin Credentials - ${college_name}`,
-      'account_created',
-      `Dear ${admin_name},\n\nYour management dashboard account has been created for ${college_name}.\n\n=== YOUR LOGIN CREDENTIALS ===\nLogin URL: ${window.location.origin}\nEmail: ${admin_email}\nTemporary Password: ${tempPassword}\n\nIMPORTANT: You MUST reset your password on first login.\n\nFor support: support@omniproctor.ai`
-    );
-
-    triggerNotification('management', 'global', 'New Admin Account Created', `College Admin account for ${admin_name} has been provisioned.`);
-    addToast('College Onboarded', `${college_name} successfully registered.`, 'success');
-
-    return {
-      success: true,
-      tempPassword,
-      adminEmail: admin_email
-    };
   };
 
   const toggleCollegeStatus = (id) => {
@@ -971,7 +996,7 @@ export const PlatformProvider = ({ children }) => {
     if (apiActive) {
       try {
         const token = localStorage.getItem('access_token');
-        const data = await apiRequest(`/students/${adminId}/force-reset`, 'POST', null, token);
+        const data = await apiRequest(`/colleges/admins/${adminId}/force-reset`, 'POST', null, token);
         addToast('Password Reset Complete', `New password generated: ${data.tempPassword}`, 'success');
         return data.tempPassword;
       } catch (err) {
@@ -999,8 +1024,15 @@ export const PlatformProvider = ({ children }) => {
 
   const resendManagementAdminCredentials = async (adminId) => {
     if (apiActive) {
-      addToast('Credentials Resent', 'Admin welcome email reminder queued successfully.', 'success');
-      return true;
+      try {
+        const token = localStorage.getItem('access_token');
+        const res = await apiRequest(`/colleges/admins/${adminId}/resend-credentials`, 'POST', null, token);
+        addToast('Credentials Resent', res.message, 'success');
+        return true;
+      } catch (err) {
+        addToast('Resend Failed', err.message, 'danger');
+        return false;
+      }
     } else {
       const admin = managementAdmins.find(a => a.id === adminId);
       if (!admin) return false;
