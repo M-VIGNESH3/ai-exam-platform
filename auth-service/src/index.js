@@ -270,9 +270,10 @@ const generateTokens = (user) => {
     collegeName: user.collegeName || null,
     branch: user.branch || null,
     year: user.year || null,
+    batchId: user.batchId || null,
     rollNumber: user.rollNumber || null
   };
-  const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '15m' });
+  const accessToken = jwt.sign(payload, JWT_SECRET, { expiresIn: '2h' });
   const refreshToken = jwt.sign({ id: user.id || user._id }, REFRESH_SECRET, { expiresIn: '7d' });
   return { accessToken, refreshToken };
 };
@@ -578,7 +579,7 @@ app.post('/api/auth/refresh', async (req, res) => {
         const studentCols = getCollection('students');
         dbUser = await studentCols.findOne({ id: decoded.id });
         if (dbUser) {
-          user = { id: dbUser.id, name: dbUser.name, email: dbUser.email, role: 'student', rollNumber: dbUser.rollNumber, branch: dbUser.branch, year: dbUser.year, collegeId: dbUser.collegeId, collegeName: dbUser.collegeName };
+          user = { id: dbUser.id, name: dbUser.name, email: dbUser.email, role: 'student', rollNumber: dbUser.rollNumber, batchId: dbUser.batchId, branch: dbUser.branch, year: dbUser.year, collegeId: dbUser.collegeId, collegeName: dbUser.collegeName };
         }
       }
     }
