@@ -405,8 +405,10 @@ export const PlatformProvider = ({ children }) => {
         const notifs = await apiRequest('/notifications', 'GET', null, token);
         setNotifications(notifs);
 
-        const logs = await apiRequest('/analytics/emails', 'GET', null, token);
-        setEmailLogs(logs);
+        if (currentUser.role === 'super_admin' || currentUser.role === 'management') {
+          const logs = await apiRequest('/analytics/emails', 'GET', null, token);
+          setEmailLogs(logs);
+        }
       } catch (err) {
         console.error('Error fetching data from API:', err);
       }

@@ -126,6 +126,7 @@ const ManagementPortal = () => {
     title: '',
     subject: '',
     questionPaperId: '',
+    batchId: '',
     duration: 60,
     negativeMarking: 0.25,
     randomized: true,
@@ -189,15 +190,37 @@ const ManagementPortal = () => {
       addToast('Validation Error', 'Exam title, subject, and question paper are required.', 'danger');
       return;
     }
+
+    let targetStudents = [];
+    let batchFilter = '';
+
+    if (examForm.batchId === 'ALL_STUDENTS') {
+      targetStudents = students.map(s => s.id);
+      batchFilter = 'All Students';
+    } else if (examForm.batchId) {
+      const selectedBatch = batches.find(b => b.id === examForm.batchId);
+      if (selectedBatch) {
+        targetStudents = students
+          .filter(s => s.batchId === examForm.batchId)
+          .map(s => s.id);
+        batchFilter = selectedBatch.name;
+      }
+    }
+
     scheduleExam({
       ...examForm,
       status: 'draft',
-      assignedStudents: []
+      assignedStudents: targetStudents,
+      batchFilter,
+      branchFilter: '',
+      yearFilter: ''
     });
+
     setExamForm({
       title: '',
       subject: '',
       questionPaperId: '',
+      batchId: '',
       duration: 60,
       negativeMarking: 0.25,
       randomized: true,
@@ -208,7 +231,12 @@ const ManagementPortal = () => {
       fullscreenRequired: true,
       aiProctoringEnabled: true
     });
-    addToast('Exam Scheduled', 'Exam scheduled as Draft. Please assign students and publish.', 'success');
+
+    if (targetStudents.length > 0) {
+      addToast('Exam Scheduled', `Exam scheduled as Draft with ${targetStudents.length} students assigned. You can publish it directly.`, 'success');
+    } else {
+      addToast('Exam Scheduled', 'Exam scheduled as Draft. No students assigned yet.', 'warning');
+    }
   };
 
   const handleQuestionSubmit = (e) => {
@@ -1321,6 +1349,17 @@ const ManagementPortal = () => {
                       ))}
                     </select>
                   )}
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Assign Students Batch *</label>
+                  <select className="form-control form-select" value={examForm.batchId} onChange={(e) => setExamForm({ ...examForm, batchId: e.target.value })} required>
+                    <option value="">-- Choose Batch to Assign --</option>
+                    <option value="ALL_STUDENTS">All Registered Students</option>
+                    {batches.map(b => (
+                      <option key={b.id} value={b.id}>{b.name} ({b.department})</option>
+                    ))}
+                  </select>
                 </div>
                 
                 <h4 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.2rem', marginTop: '0.5rem' }}>Exam Rules & Constraints</h4>
