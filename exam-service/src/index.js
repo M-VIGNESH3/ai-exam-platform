@@ -454,42 +454,49 @@ app.get('/api/exams/question-papers/:id', authenticate, authorize(['management']
 
 // Create question paper
 app.post('/api/exams/question-papers', authenticate, authorize(['management']), async (req, res) => {
-  const { title, subject, questions: questionIds, questionMarks, totalMarks, status } = req.body;
+  try {
+    const { title, subject, questions: questionIds, questionMarks, marks, totalMarks, status } = req.body;
 
-  if (!title || !subject || !questionIds || !Array.isArray(questionIds)) {
-    return res.status(400).json({ message: 'Missing required question paper parameters.' });
-  }
-
-  if (questionIds.length === 0) {
-    return res.status(400).json({ message: 'Validation Error: A question paper must contain at least one question.' });
-  }
-
-  const uniqueIds = new Set(questionIds);
-  if (uniqueIds.size !== questionIds.length) {
-    return res.status(400).json({ message: 'Validation Error: A question paper cannot contain duplicate questions.' });
-  }
-
-  for (const qId of questionIds) {
-    const m = parseFloat(questionMarks[qId]);
-    if (isNaN(m) || m <= 0) {
-      return res.status(400).json({ message: 'Validation Error: Question marks must be greater than 0.' });
+    if (!title || !subject || !questionIds || !Array.isArray(questionIds)) {
+      return res.status(400).json({ message: 'Missing required question paper parameters.' });
     }
+
+    if (questionIds.length === 0) {
+      return res.status(400).json({ message: 'Validation Error: A question paper must contain at least one question.' });
+    }
+
+    const uniqueIds = new Set(questionIds);
+    if (uniqueIds.size !== questionIds.length) {
+      return res.status(400).json({ message: 'Validation Error: A question paper cannot contain duplicate questions.' });
+    }
+
+    const actualMarks = questionMarks || marks || {};
+
+    for (const qId of questionIds) {
+      const m = parseFloat(actualMarks[qId]);
+      if (isNaN(m) || m <= 0) {
+        return res.status(400).json({ message: 'Validation Error: Question marks must be greater than 0.' });
+      }
+    }
+
+    const papers = getCollection('question_papers');
+    const newPaper = {
+      title,
+      subject,
+      questions: questionIds,
+      questionMarks: actualMarks,
+      totalMarks: totalMarks || questionIds.reduce((sum, qId) => sum + (parseFloat(actualMarks[qId]) || 0), 0),
+      status: status || 'draft',
+      collegeId: req.user.collegeId,
+      createdAt: new Date().toISOString()
+    };
+
+    const saved = await papers.insertOne(newPaper);
+    return res.status(201).json(saved);
+  } catch (error) {
+    console.error('Error creating question paper:', error);
+    return res.status(500).json({ message: 'Internal Server Error: Failed to create question paper.', error: error.message });
   }
-
-  const papers = getCollection('question_papers');
-  const newPaper = {
-    title,
-    subject,
-    questions: questionIds,
-    questionMarks,
-    totalMarks: totalMarks || questionIds.reduce((sum, qId) => sum + (parseFloat(questionMarks[qId]) || 0), 0),
-    status: status || 'draft',
-    collegeId: req.user.collegeId,
-    createdAt: new Date().toISOString()
-  };
-
-  const saved = await papers.insertOne(newPaper);
-  return res.status(201).json(saved);
 });
 
 // Delete question paper

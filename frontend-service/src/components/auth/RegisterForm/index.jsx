@@ -144,6 +144,9 @@ const StudentRegister = ({ onBackToLogin }) => {
         collegeId: selectedCollege.id
       });
       if (result.success) {
+        if (result.otp) {
+          setSentCode(result.otp);
+        }
         setStep(3);
       }
     } else {
@@ -473,16 +476,29 @@ const StudentRegister = ({ onBackToLogin }) => {
                   Enter the 6-digit activation code sent to your inbox.
                 </p>
                 {apiActive ? (
-                  <div style={{
-                    marginTop: '0.5rem',
-                    fontSize: '0.75rem',
-                    color: 'var(--color-success)',
-                    background: 'var(--color-success-light)',
-                    padding: '0.5rem 1rem',
-                    borderRadius: '4px',
-                    display: 'inline-block'
-                  }}>
-                    Live Environment: Please check your email inbox or the Admin Email Outbox Log.
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem', alignItems: 'center' }}>
+                    <div style={{
+                      fontSize: '0.75rem',
+                      color: 'var(--color-success)',
+                      background: 'var(--color-success-light)',
+                      padding: '0.5rem 1rem',
+                      borderRadius: '4px',
+                      display: 'inline-block'
+                    }}>
+                      Live Environment: Please check your email inbox or the Admin Email Outbox Log.
+                    </div>
+                    {sentCode && (
+                      <div style={{
+                        fontSize: '0.75rem',
+                        color: 'var(--color-warning)',
+                        background: 'var(--color-warning-light)',
+                        padding: '0.5rem 1rem',
+                        borderRadius: '4px',
+                        display: 'inline-block'
+                      }}>
+                        Debug Fallback: Your verification code is <strong>{sentCode}</strong>.
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div style={{

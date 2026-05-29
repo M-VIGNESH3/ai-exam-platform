@@ -313,6 +313,65 @@ app.post('/api/colleges', authenticate, authorize(['super_admin']), async (req, 
   });
 });
 
+// Add College Sub-Admin (Management Admin level)
+app.post('/api/colleges/admins', authenticate, authorize(['management']), async (req, res) => {
+  const { name, email, department } = req.body;
+
+  if (!name || !email) {
+    return res.status(400).json({ message: 'Name and email are required.' });
+  }
+
+  const adminCols = getCollection('managementAdmins');
+  const existingAdmin = await adminCols.findOne({ email: email.toLowerCase() });
+  if (existingAdmin) {
+    return res.status(400).json({ message: 'Admin email is already registered.' });
+  }
+
+  const cleanName = name.replace(/[^a-zA-Z]/g, '');
+  const prefix = cleanName.charAt(0).toUpperCase() + cleanName.slice(1, 5).toLowerCase();
+  const specialChars = '@#$';
+  const special = specialChars.charAt(Math.floor(Math.random() * specialChars.length));
+  const num = Math.floor(1000 + Math.random() * 9000);
+  const tempPassword = `${prefix}${special}${num}`;
+
+  const adminId = 'm_' + Date.now() + Math.random().toString(36).substring(2, 6);
+  const newAdmin = {
+    id: adminId,
+    collegeId: req.user.collegeId,
+    collegeName: req.user.collegeName,
+    name,
+    email: email.toLowerCase(),
+    role: 'management',
+    department: department || 'All',
+    password: bcrypt.hashSync(tempPassword, 8),
+    mustResetPassword: true,
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    tempPasswordDisplay: tempPassword
+  };
+
+  await adminCols.insertOne(newAdmin);
+
+  await queueEmail(
+    newAdmin.email,
+    `Your Institution Administrator Credentials - ${req.user.collegeName}`,
+    'college_admin_creation',
+    `Dear ${name},\n\nYour management dashboard account has been created for ${req.user.collegeName}.\n\n=== YOUR LOGIN CREDENTIALS ===\nWeb Console: ${req.headers.origin || 'http://localhost'}\nUsername/Email: ${newAdmin.email}\nTemporary Password: ${tempPassword}\n\nIMPORTANT: You MUST reset your password on first login.\n\nBest regards,\nOmniProctor Support Team`
+  );
+
+  return res.status(201).json({
+    message: 'Sub-admin created successfully.',
+    admin: newAdmin
+  });
+});
+
+// Get College Sub-Admins
+app.get('/api/colleges/admins', authenticate, authorize(['management']), async (req, res) => {
+  const adminCols = getCollection('managementAdmins');
+  const list = await adminCols.find({ collegeId: req.user.collegeId });
+  return res.json(list);
+});
+
 // List Colleges
 app.get('/api/colleges', authenticate, authorize(['super_admin']), async (req, res) => {
   const colleges = getCollection('colleges');

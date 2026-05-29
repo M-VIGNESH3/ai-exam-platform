@@ -380,6 +380,12 @@ export const PlatformProvider = ({ children }) => {
           setQuestions(questionsData);
           const papersData = await apiRequest('/exams/question-papers', 'GET', null, token);
           setQuestionPapers(papersData);
+          try {
+            const adminData = await apiRequest('/colleges/admins', 'GET', null, token);
+            setManagementAdmins(adminData);
+          } catch (e) {
+            console.error('Failed to fetch sub-admins:', e);
+          }
         } else if (currentUser.role === 'student') {
           const studentExams = await apiRequest('/exams/student', 'GET', null, token);
           setExams(studentExams);
@@ -1116,7 +1122,7 @@ export const PlatformProvider = ({ children }) => {
           password: studentData.password
         });
         addToast('Registration Initiated', 'Verification OTP sent to your email.', 'success');
-        return { success: true, api: true };
+        return { success: true, api: true, otp: data.otp };
       } catch (err) {
         addToast('Registration Failed', err.message, 'danger');
         return { success: false, message: err.message };
@@ -1202,7 +1208,7 @@ export const PlatformProvider = ({ children }) => {
   };
 
   // Management Add Admin Account (Legacy manually-added sub-admins)
-  const addManagementAdmin = (adminData) => {
+  const addManagementAdmin = async (adminData) => {
     if (!adminData.name || !adminData.email) {
       addToast('Validation Error', 'Name and email are required.', 'danger');
       return;
@@ -1211,31 +1217,47 @@ export const PlatformProvider = ({ children }) => {
       addToast('Validation Error', 'Email already registered as administrator.', 'danger');
       return;
     }
-    const tempPassword = generateTempPassword(adminData.name);
-    const newAdmin = {
-      id: uid('m'),
-      name: adminData.name,
-      email: adminData.email,
-      department: adminData.department || 'All',
-      password: hashPassword(tempPassword),
-      mustResetPassword: true,
-      createdAt: new Date().toISOString(),
-      createdBy: currentUser?.name || 'System',
-      tempPasswordDisplay: tempPassword
-    };
-    setManagementAdmins(prev => [...prev, newAdmin]);
 
-    logAuditEvent('management_account_created', currentUser?.name || 'System', newAdmin.email, `Management admin "${newAdmin.name}" created with temp password. mustResetPassword=true.`);
+    if (apiActive) {
+      try {
+        const token = localStorage.getItem('access_token');
+        const res = await apiRequest('/colleges/admins', 'POST', {
+          name: adminData.name,
+          email: adminData.email,
+          department: adminData.department
+        }, token);
+        setManagementAdmins(prev => [...prev, res.admin]);
+        addToast('Admin Registered', res.message, 'success');
+      } catch (err) {
+        addToast('Failed to Register Admin', err.message, 'danger');
+      }
+    } else {
+      const tempPassword = generateTempPassword(adminData.name);
+      const newAdmin = {
+        id: uid('m'),
+        name: adminData.name,
+        email: adminData.email,
+        department: adminData.department || 'All',
+        password: hashPassword(tempPassword),
+        mustResetPassword: true,
+        createdAt: new Date().toISOString(),
+        createdBy: currentUser?.name || 'System',
+        tempPasswordDisplay: tempPassword
+      };
+      setManagementAdmins(prev => [...prev, newAdmin]);
 
-    sendMockEmail(
-      newAdmin.email,
-      'Your Institution Admin Credentials',
-      'account_created',
-      `Dear ${newAdmin.name},\n\nYour management dashboard account has been created.\n\n=== YOUR LOGIN CREDENTIALS ===\nLogin URL: ${window.location.origin}\nEmail: ${newAdmin.email}\nTemporary Password: ${tempPassword}\n\nIMPORTANT: You MUST reset your password on first login.\n\nFor support: support@omniproctor.ai`
-    );
+      logAuditEvent('management_account_created', currentUser?.name || 'System', newAdmin.email, `Management admin "${newAdmin.name}" created with temp password. mustResetPassword=true.`);
 
-    triggerNotification('management', 'global', 'New Admin Account Created', `Management account for ${newAdmin.name} (${newAdmin.email}) has been provisioned.`);
-    addToast('Admin Registered', `Management account generated for ${newAdmin.name}. Temp password: ${tempPassword}`, 'success');
+      sendMockEmail(
+        newAdmin.email,
+        'Your Institution Admin Credentials',
+        'account_created',
+        `Dear ${newAdmin.name},\n\nYour management dashboard account has been created.\n\n=== YOUR LOGIN CREDENTIALS ===\nLogin URL: ${window.location.origin}\nEmail: ${newAdmin.email}\nTemporary Password: ${tempPassword}\n\nIMPORTANT: You MUST reset your password on first login.\n\nFor support: support@omniproctor.ai`
+      );
+
+      triggerNotification('management', 'global', 'New Admin Account Created', `Management account for ${newAdmin.name} (${newAdmin.email}) has been provisioned.`);
+      addToast('Admin Registered', `Management account generated for ${newAdmin.name}. Temp password: ${tempPassword}`, 'success');
+    }
   };
 
   // Management Departments
@@ -1797,7 +1819,12 @@ export const PlatformProvider = ({ children }) => {
     if (apiActive) {
       try {
         const token = localStorage.getItem('access_token');
-        const res = await apiRequest('/exams/question-papers', 'POST', paperData, token);
+        const payload = {
+          ...paperData,
+          questionMarks: paperData.questionMarks || paperData.marks,
+          marks: paperData.questionMarks || paperData.marks
+        };
+        const res = await apiRequest('/exams/question-papers', 'POST', payload, token);
         setQuestionPapers(prev => [...prev, res]);
         addToast('Paper Saved', 'Question paper saved successfully.', 'success');
         return res;
@@ -1811,7 +1838,7 @@ export const PlatformProvider = ({ children }) => {
         title: paperData.title,
         subject: paperData.subject,
         questions: paperData.questions,
-        questionMarks: paperData.questionMarks,
+        questionMarks: paperData.questionMarks || paperData.marks,
         totalMarks: paperData.totalMarks,
         status: paperData.status || 'draft',
         createdAt: new Date().toISOString()

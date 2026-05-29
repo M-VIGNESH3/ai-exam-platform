@@ -336,7 +336,8 @@ app.post('/api/auth/register', async (req, res) => {
 
   return res.status(201).json({ 
     message: 'Registration successful! Verification OTP code has been sent to your email.', 
-    email: newStudent.email 
+    email: newStudent.email,
+    otp
   });
 });
 

@@ -1,24 +1,24 @@
 version: '3.8'
 
 services:
-  # 1. PostgreSQL Database Service
-  postgres-service:
-    image: postgres:alpine
-    container_name: omniproctor_postgres
-    ports:
-      - "5432:5432"
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=ai-exam-platform
-    volumes:
-      - pg_data:/var/lib/postgresql/data
-    restart: always
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+  # 1. PostgreSQL Database Service (Commented out as it is unused by all microservices)
+  # postgres-service:
+  #   image: postgres:alpine
+  #   container_name: omniproctor_postgres
+  #   ports:
+  #     - "5432:5432"
+  #   environment:
+  #     - POSTGRES_USER=postgres
+  #     - POSTGRES_PASSWORD=postgres
+  #     - POSTGRES_DB=ai-exam-platform
+  #   volumes:
+  #     - pg_data:/var/lib/postgresql/data
+  #   restart: always
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U postgres"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
 
   # 2. MongoDB Database Service
   mongodb:
