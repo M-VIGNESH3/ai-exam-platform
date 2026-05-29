@@ -1007,7 +1007,7 @@ const ManagementPortal = () => {
                           <tr key={b.id}>
                             <td><strong>{b.name}</strong></td>
                             <td>{b.department}</td>
-                            <td>{b.students.length} Candidates</td>
+                            <td>{(b.students || []).length} Candidates</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1284,7 +1284,7 @@ const ManagementPortal = () => {
                     <select className="form-control form-select" value={examForm.questionPaperId} onChange={(e) => setExamForm({ ...examForm, questionPaperId: e.target.value })} required>
                       <option value="">-- Choose Question Paper --</option>
                       {questionPapers.map(qp => (
-                        <option key={qp.id} value={qp.id}>{qp.title} ({qp.subject} - {qp.questions.length} MCQs)</option>
+                        <option key={qp.id} value={qp.id}>{qp.title} ({qp.subject} - {(qp.questions || []).length} MCQs)</option>
                       ))}
                     </select>
                   )}
@@ -1388,7 +1388,9 @@ const ManagementPortal = () => {
                               </div>
                             </td>
                             <td>
-                              {e.assignedStudents && e.assignedStudents.length > 0 ? (
+                              {e.batchId ? (
+                                <span className="badge badge-info">{batches.find(b => b.id === e.batchId)?.name || e.batchId}</span>
+                              ) : e.assignedStudents && e.assignedStudents.length > 0 ? (
                                 <span className="badge badge-info">{e.assignedStudents.length} Students Assigned</span>
                               ) : e.branchFilter ? (
                                 <span className="badge badge-secondary">{e.branchFilter} - {e.yearFilter}</span>
@@ -1412,12 +1414,11 @@ const ManagementPortal = () => {
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
                                 {e.status === 'draft' && (
                                   <button className="btn btn-primary btn-sm" onClick={() => {
-                                    if (!e.assignedStudents || e.assignedStudents.length === 0) {
-                                      addToast('Publish Rejected', 'Roster must be assigned before publishing.', 'danger');
+                                    if (!e.batchId && (!e.assignedStudents || e.assignedStudents.length === 0)) {
+                                      addToast('Publish Rejected', 'A batch must be assigned before publishing. Set a batch in the exam schedule form.', 'danger');
                                       return;
                                     }
                                     publishExam(e.id);
-                                    addToast('Success', 'Exam published to students portal.', 'success');
                                   }}>
                                     Publish Exam
                                   </button>
@@ -1843,7 +1844,7 @@ const ManagementPortal = () => {
                   <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', padding: '0.25rem 0', borderBottom: '1px dashed var(--border-color)' }}>
                     <span>{e.title}</span>
                     <strong>
-                      {e.assignedStudents && e.assignedStudents.length > 0 ? `${e.assignedStudents.length} Students` : e.branchFilter ? `${e.branchFilter} - ${e.yearFilter}` : 'None'}
+                      {e.batchId ? (batches.find(b => b.id === e.batchId)?.name || e.batchId) : e.assignedStudents && e.assignedStudents.length > 0 ? `${e.assignedStudents.length} Students` : e.branchFilter ? `${e.branchFilter} - ${e.yearFilter}` : 'None'}
                     </strong>
                   </div>
                 ))}
