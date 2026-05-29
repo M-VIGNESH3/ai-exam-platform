@@ -3,7 +3,7 @@ import { usePlatform } from '../../../contexts/PlatformContext';
 import { ShieldCheck, Mail, Lock, User, Calendar, Phone, Upload, Eye, EyeOff, Search, Compass, ChevronRight, CheckCircle, ArrowLeft, AlertCircle } from 'lucide-react';
 
 const StudentRegister = ({ onBackToLogin }) => {
-  const { colleges, students, registerStudent, verifyStudentOtp, sendMockEmail, addToast, apiActive } = usePlatform();
+  const { colleges, students, batches, registerStudent, verifyStudentOtp, sendMockEmail, addToast, apiActive } = usePlatform();
 
   // Registration step state
   // 1: College selection, 2: Form inputs, 3: Email verification
@@ -19,12 +19,9 @@ const StudentRegister = ({ onBackToLogin }) => {
     fullName: '',
     email: '',
     rollNumber: '',
-    branch: 'CSE',
-    year: '1st Year',
+    batchId: '',
     mobileNumber: '',
     gender: 'Male',
-    section: 'A',
-    semester: '1st Semester',
     dateOfBirth: '',
     profilePhoto: '',
     password: '',
@@ -32,6 +29,9 @@ const StudentRegister = ({ onBackToLogin }) => {
     githubProfile: '',
     linkedinProfile: ''
   });
+
+  const [collegeBatches, setCollegeBatches] = useState([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
 
   // Security/visibility states
   const [showPassword, setShowPassword] = useState(false);
@@ -65,11 +65,33 @@ const StudentRegister = ({ onBackToLogin }) => {
     setSuggestions(filtered);
   }, [collegeSearch, colleges]);
 
-  const handleSelectCollege = (college) => {
+  const handleSelectCollege = async (college) => {
     setSelectedCollege(college);
     setCollegeSearch(college.name);
     setSuggestions([]);
-    setStep(2);
+    
+    if (apiActive) {
+      setLoadingBatches(true);
+      try {
+        const response = await fetch(`/api/colleges/${college.id}/batches`);
+        if (response.ok) {
+          const data = await response.json();
+          setCollegeBatches(data);
+        } else {
+          setCollegeBatches([]);
+        }
+      } catch (err) {
+        console.error('Failed to fetch college batches:', err);
+        setCollegeBatches([]);
+      } finally {
+        setLoadingBatches(false);
+        setStep(2);
+      }
+    } else {
+      const filtered = batches.filter(b => !b.collegeId || b.collegeId === college.id);
+      setCollegeBatches(filtered.length > 0 ? filtered : batches);
+      setStep(2);
+    }
   };
 
   const handleInputChange = (e) => {
@@ -81,8 +103,6 @@ const StudentRegister = ({ onBackToLogin }) => {
   const validateForm = () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const mobileRegex = /^[0-9]{10}$/;
-    const validBranches = ['CSE', 'ECE', 'EEE', 'ME', 'CE', 'IT'];
-    const validYears = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
 
     if (!selectedCollege) {
       return 'You must select an existing college';
@@ -102,11 +122,8 @@ const StudentRegister = ({ onBackToLogin }) => {
     if (students.some(s => s.rollNumber.toLowerCase() === formData.rollNumber.toLowerCase())) {
       return 'Roll Number is already registered';
     }
-    if (!validBranches.includes(formData.branch)) {
-      return 'Invalid branch selected';
-    }
-    if (!validYears.includes(formData.year)) {
-      return 'Invalid year selected';
+    if (!formData.batchId) {
+      return 'Please select a batch';
     }
     if (!mobileRegex.test(formData.mobileNumber)) {
       return 'Mobile Number must be exactly 10 digits';
@@ -114,10 +131,6 @@ const StudentRegister = ({ onBackToLogin }) => {
     if (!formData.dateOfBirth) {
       return 'Date of Birth is required';
     }
-    if (!formData.section.trim()) {
-      return 'Section is required';
-    }
-    // Profile photo is optional
     if (!isPasswordStrong) {
       return 'Password does not meet strength requirements';
     }
@@ -321,42 +334,30 @@ const StudentRegister = ({ onBackToLogin }) => {
                   <label className="form-label">Mobile Number *</label>
                   <input type="text" name="mobileNumber" className="form-control" value={formData.mobileNumber} onChange={handleInputChange} placeholder="10-digit number" required />
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Branch *</label>
-                  <select name="branch" className="form-control form-select" value={formData.branch} onChange={handleInputChange}>
-                    <option value="CSE">CSE (Computer Science)</option>
-                    <option value="ECE">ECE (Electronics & Comm)</option>
-                    <option value="EEE">EEE (Electrical & Electronics)</option>
-                    <option value="ME">ME (Mechanical Eng)</option>
-                    <option value="CE">CE (Civil Eng)</option>
-                    <option value="IT">IT (Information Technology)</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Academic Year *</label>
-                  <select name="year" className="form-control form-select" value={formData.year} onChange={handleInputChange}>
-                    <option value="1st Year">1st Year</option>
-                    <option value="2nd Year">2nd Year</option>
-                    <option value="3rd Year">3rd Year</option>
-                    <option value="4th Year">4th Year</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Semester *</label>
-                  <select name="semester" className="form-control form-select" value={formData.semester} onChange={handleInputChange}>
-                    <option value="1st Semester">1st Semester</option>
-                    <option value="2nd Semester">2nd Semester</option>
-                    <option value="3rd Semester">3rd Semester</option>
-                    <option value="4th Semester">4th Semester</option>
-                    <option value="5th Semester">5th Semester</option>
-                    <option value="6th Semester">6th Semester</option>
-                    <option value="7th Semester">7th Semester</option>
-                    <option value="8th Semester">8th Semester</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Section *</label>
-                  <input type="text" name="section" className="form-control" value={formData.section} onChange={handleInputChange} placeholder="A" required />
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label className="form-label">Batch *</label>
+                  {loadingBatches ? (
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Loading batches...</div>
+                  ) : collegeBatches.length === 0 ? (
+                    <div style={{ fontSize: '0.85rem', color: 'var(--color-danger)' }}>
+                      No active batches found for this institution. Please contact your college administrator to create a batch first.
+                    </div>
+                  ) : (
+                    <select
+                      name="batchId"
+                      className="form-control form-select"
+                      value={formData.batchId}
+                      onChange={handleInputChange}
+                      required
+                    >
+                      <option value="">-- Select Batch --</option>
+                      {collegeBatches.map(b => (
+                        <option key={b.id} value={b.id}>
+                          {b.name} ({b.branch || 'General'} - {b.year || 'N/A'})
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div className="form-group">
                   <label className="form-label">Date of Birth *</label>

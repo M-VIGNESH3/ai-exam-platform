@@ -378,7 +378,7 @@ app.post('/api/students/import', authenticate, authorize(['management']), upload
     }
 
     const headers = dataAOA[0].map(h => String(h || '').toLowerCase().trim());
-    const reqHeaders = ['full_name', 'email', 'roll_number', 'branch', 'year'];
+    const reqHeaders = ['full_name', 'email', 'roll_number', 'batch'];
     const missingHeaders = reqHeaders.filter(rh => !headers.includes(rh));
     
     if (missingHeaders.length > 0) {
@@ -391,17 +391,14 @@ app.post('/api/students/import', authenticate, authorize(['management']), upload
     const nameIdx = headers.indexOf('full_name');
     const emailIdx = headers.indexOf('email');
     const rollIdx = headers.indexOf('roll_number');
-    const branchIdx = headers.indexOf('branch');
-    const yearIdx = headers.indexOf('year');
+    const batchIdx = headers.indexOf('batch');
     const mobileIdx = headers.indexOf('mobile_number');
     const genderIdx = headers.indexOf('gender');
 
     const imported = [];
     const errors = [];
     const studentCols = getCollection('students');
-
-    const validBranches = ['CSE', 'ECE', 'IT', 'ME', 'EE', 'Civil'];
-    const validYears = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
+    const batchesCol = getCollection('batches');
 
     for (let i = 1; i < dataAOA.length; i++) {
       const cols = dataAOA[i];
@@ -412,23 +409,12 @@ app.post('/api/students/import', authenticate, authorize(['management']), upload
       const fullName = String(cols[nameIdx] || '').trim();
       const email = String(cols[emailIdx] || '').trim().toLowerCase();
       const rollNumber = String(cols[rollIdx] || '').trim();
-      const branch = String(cols[branchIdx] || '').trim();
-      const year = String(cols[yearIdx] || '').trim();
+      const batchName = String(cols[batchIdx] || '').trim();
       const mobileNumber = mobileIdx !== -1 ? String(cols[mobileIdx] || '').trim() : '';
       const gender = genderIdx !== -1 ? String(cols[genderIdx] || '').trim() : 'Not Specified';
 
-      if (!fullName || !email || !rollNumber || !branch || !year) {
+      if (!fullName || !email || !rollNumber || !batchName) {
         errors.push({ row: i + 1, error: 'Missing values for required parameters.' });
-        continue;
-      }
-
-      if (!validBranches.includes(branch)) {
-        errors.push({ row: i + 1, rollNumber, error: `Invalid Branch "${branch}". Allowed: ${validBranches.join(', ')}` });
-        continue;
-      }
-
-      if (!validYears.includes(year)) {
-        errors.push({ row: i + 1, rollNumber, error: `Invalid Year "${year}". Allowed: ${validYears.join(', ')}` });
         continue;
       }
 
@@ -456,6 +442,26 @@ app.post('/api/students/import', authenticate, authorize(['management']), upload
         continue;
       }
 
+      // Find or create batch
+      let batch = await batchesCol.findOne({ name: batchName, collegeId });
+      if (!batch) {
+        const parts = batchName.split('-');
+        const branch = parts[0] || 'CSE';
+        const year = parts[1] || '1st Year';
+        const section = parts[2] || 'A';
+
+        batch = {
+          id: 'b_' + Date.now() + Math.random().toString(36).substring(2, 6),
+          name: batchName,
+          branch,
+          year,
+          section,
+          active_status: 'active',
+          collegeId
+        };
+        await batchesCol.insertOne(batch);
+      }
+
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
       const otpExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
@@ -475,9 +481,12 @@ app.post('/api/students/import', authenticate, authorize(['management']), upload
         name: fullName,
         email,
         rollNumber,
-        branch,
-        department: departmentMap[branch] || branch || 'General',
-        year,
+        batchId: batch.id,
+        batchName: batch.name,
+        branch: batch.branch,
+        department: departmentMap[batch.branch] || batch.branch || 'General',
+        year: batch.year,
+        section: batch.section,
         mobileNumber,
         gender,
         collegeId,
@@ -517,14 +526,77 @@ app.post('/api/students/import', authenticate, authorize(['management']), upload
         fullName: s.name,
         email: s.email,
         rollNumber: s.rollNumber,
-        branch: s.branch,
-        year: s.year,
+        batch: s.batchName,
         activationOtp: s.otp
       }))
     });
   } catch (err) {
     console.error('Import parse error:', err);
     return res.status(500).json({ message: 'Error parsing upload data sheet. Ensure valid formatting.' });
+  }
+});
+
+// Get Batches for college (Public endpoint for registration)
+app.get('/api/colleges/:collegeId/batches', async (req, res) => {
+  try {
+    const { collegeId } = req.params;
+    const batchesCol = getCollection('batches');
+    const list = await batchesCol.find({ collegeId });
+    return res.json(list);
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+// Get Batches (Authenticated)
+app.get('/api/batches', authenticate, authorize(['management', 'super_admin']), async (req, res) => {
+  try {
+    const batchesCol = getCollection('batches');
+    let filter = {};
+    if (req.user.role === 'management') {
+      filter.collegeId = req.user.collegeId;
+    }
+    const list = await batchesCol.find(filter);
+    return res.json(list);
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+// Create Batch
+app.post('/api/batches', authenticate, authorize(['management']), async (req, res) => {
+  try {
+    const { name, department } = req.body;
+    if (!name || !department) {
+      return res.status(400).json({ message: 'Batch name and department are required.' });
+    }
+
+    const batchesCol = getCollection('batches');
+    const existing = await batchesCol.findOne({ name, collegeId: req.user.collegeId });
+    if (existing) {
+      return res.status(400).json({ message: 'Batch already exists.' });
+    }
+
+    const parts = name.split('-');
+    const branch = parts[0] || 'CSE';
+    const year = parts[1] || '1st Year';
+    const section = parts[2] || 'A';
+
+    const newBatch = {
+      id: 'b_' + Date.now() + Math.random().toString(36).substring(2, 6),
+      name,
+      branch,
+      year,
+      section,
+      active_status: 'active',
+      collegeId: req.user.collegeId,
+      department
+    };
+
+    await batchesCol.insertOne(newBatch);
+    return res.status(201).json({ message: 'Batch created successfully.', batch: newBatch });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
   }
 });
 

@@ -9,6 +9,7 @@ export default defineConfig({
       '/api/auth': { target: 'http://localhost:5001', changeOrigin: true },
       '/api/colleges': { target: 'http://localhost:5002', changeOrigin: true },
       '/api/students': { target: 'http://localhost:5003', changeOrigin: true },
+      '/api/batches': { target: 'http://localhost:5003', changeOrigin: true },
       '/api/exams': { target: 'http://localhost:5004', changeOrigin: true },
       '/api/proctoring': { target: 'http://localhost:5005', changeOrigin: true },
       '/api/notifications': { target: 'http://localhost:5006', changeOrigin: true },

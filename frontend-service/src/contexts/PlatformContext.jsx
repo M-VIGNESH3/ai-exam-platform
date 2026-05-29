@@ -392,6 +392,12 @@ export const PlatformProvider = ({ children }) => {
           const papersData = await apiRequest('/exams/question-papers', 'GET', null, token);
           setQuestionPapers(papersData);
           try {
+            const batchData = await apiRequest('/batches', 'GET', null, token);
+            setBatches(batchData);
+          } catch (e) {
+            console.error('Failed to fetch batches:', e);
+          }
+          try {
             const adminData = await apiRequest('/colleges/admins', 'GET', null, token);
             setManagementAdmins(adminData);
           } catch (e) {
@@ -1127,8 +1133,7 @@ export const PlatformProvider = ({ children }) => {
           fullName: studentData.fullName,
           email: studentData.email,
           rollNumber: studentData.rollNumber,
-          branch: studentData.branch,
-          year: studentData.year,
+          batchId: studentData.batchId,
           mobileNumber: studentData.mobileNumber,
           gender: studentData.gender,
           collegeId: studentData.collegeId,
@@ -1163,6 +1168,7 @@ export const PlatformProvider = ({ children }) => {
     
     // roll number becomes default user_id!
     const studentId = studentData.rollNumber;
+    const batch = batches.find(b => b.id === studentData.batchId) || { id: 'b1', name: 'CSE-2026-A', branch: 'CSE', year: '1st Year', section: 'A' };
     
     const newStudent = {
       id: studentId,
@@ -1171,12 +1177,14 @@ export const PlatformProvider = ({ children }) => {
       rollNumber: studentData.rollNumber,
       collegeId: studentData.collegeId,
       collegeName: college.name,
-      branch: studentData.branch,
-      year: studentData.year,
+      batchId: batch.id,
+      batchName: batch.name,
+      branch: batch.branch,
+      year: batch.year,
+      section: batch.section,
       mobileNumber: studentData.mobileNumber,
       gender: studentData.gender,
-      section: studentData.section,
-      semester: studentData.semester,
+      semester: studentData.semester || '1st Semester',
       dateOfBirth: studentData.dateOfBirth,
       profilePhoto: studentData.profilePhoto,
       password: hashedPassword,
@@ -1185,7 +1193,6 @@ export const PlatformProvider = ({ children }) => {
       linkedinProfile: studentData.linkedinProfile || '',
       status: 'active',
       verified: true,
-      batchId: 'b1', // assign a default batch
       createdAt: new Date().toISOString()
     };
 
@@ -1294,7 +1301,7 @@ export const PlatformProvider = ({ children }) => {
   };
 
   // Management Batches
-  const createBatch = (name, department) => {
+  const createBatch = async (name, department) => {
     if (!name || !department) {
       addToast('Validation Error', 'Batch name and department are required.', 'danger');
       return;
@@ -1304,14 +1311,27 @@ export const PlatformProvider = ({ children }) => {
       return;
     }
     const newBatch = {
-      id: uid('b'),
+      id: 'b_' + Date.now(),
       name,
       department,
       students: []
     };
-    setBatches(prev => [...prev, newBatch]);
-    logAuditEvent('batch_created', currentUser?.name || 'System', name, `Batch "${name}" created for ${department}.`);
-    addToast('Batch Created', `Batch "${name}" created for ${department}.`, 'success');
+
+    if (apiActive) {
+      try {
+        const token = localStorage.getItem('access_token');
+        const res = await apiRequest('/batches', 'POST', { name, department }, token);
+        setBatches(prev => [...prev, res.batch]);
+        logAuditEvent('batch_created', currentUser?.name || 'System', name, `Batch "${name}" created for ${department}.`);
+        addToast('Batch Created', `Batch "${name}" created for ${department}.`, 'success');
+      } catch (err) {
+        addToast('Error', err.message || 'Failed to create batch on server.', 'danger');
+      }
+    } else {
+      setBatches(prev => [...prev, newBatch]);
+      logAuditEvent('batch_created', currentUser?.name || 'System', name, `Batch "${name}" created for ${department}.`);
+      addToast('Batch Created', `Batch "${name}" created for ${department}.`, 'success');
+    }
   };
 
   // Management Operations (Create user, Bulk Upload, Schedule Exam)

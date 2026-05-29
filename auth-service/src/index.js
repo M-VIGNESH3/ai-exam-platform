@@ -345,6 +345,7 @@ app.post('/api/auth/login', async (req, res) => {
           email: student.email,
           role: 'student',
           rollNumber: student.rollNumber,
+          batchId: student.batchId,
           branch: student.branch,
           year: student.year,
           collegeId: student.collegeId,
@@ -361,8 +362,8 @@ app.post('/api/auth/login', async (req, res) => {
 
 // Self-Register Student
 app.post('/api/auth/register', async (req, res) => {
-  const { fullName, email, rollNumber, branch, year, mobileNumber, gender, collegeId, password } = req.body;
-  if (!fullName || !email || !rollNumber || !branch || !year || !collegeId || !password) {
+  const { fullName, email, rollNumber, batchId, mobileNumber, gender, collegeId, password } = req.body;
+  if (!fullName || !email || !rollNumber || !batchId || !collegeId || !password) {
     return res.status(400).json({ message: 'Missing mandatory fields for student registration' });
   }
 
@@ -381,6 +382,12 @@ app.post('/api/auth/register', async (req, res) => {
   const college = await colleges.findOne({ id: collegeId });
   if (!college) {
     return res.status(400).json({ message: 'Selected college does not exist in our systems' });
+  }
+
+  const batchesCol = getCollection('batches');
+  const batch = await batchesCol.findOne({ id: batchId });
+  if (!batch) {
+    return res.status(400).json({ message: 'Selected batch does not exist' });
   }
 
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
@@ -402,9 +409,12 @@ app.post('/api/auth/register', async (req, res) => {
     name: fullName,
     email: email.toLowerCase(),
     rollNumber,
-    branch,
-    department: departmentMap[branch] || branch || 'General',
-    year,
+    batchId: batch.id,
+    batchName: batch.name,
+    branch: batch.branch,
+    department: departmentMap[batch.branch] || batch.branch || 'General',
+    year: batch.year,
+    section: batch.section,
     mobileNumber: mobileNumber || '',
     gender: gender || 'Not Specified',
     collegeId,

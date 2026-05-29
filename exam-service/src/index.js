@@ -560,14 +560,10 @@ const sendExamPublishNotifications = async (exam, creatorUser) => {
   const studentCols = getCollection('students');
   const notifCols = getCollection('notifications');
 
-  const allStudents = await studentCols.find({ collegeId: exam.collegeId, status: 'active' });
-  const studentsList = allStudents.filter(stud => {
-    if (exam.assignedStudents && exam.assignedStudents.length > 0) {
-      return exam.assignedStudents.includes(stud.id) || exam.assignedStudents.includes(stud.rollNumber);
-    }
-    const branchMatch = !exam.branchFilter || exam.branchFilter === stud.branch;
-    const yearMatch = !exam.yearFilter || exam.yearFilter === stud.year;
-    return branchMatch && yearMatch;
+  const studentsList = await studentCols.find({ 
+    collegeId: exam.collegeId, 
+    status: 'active',
+    batchId: exam.batchId
   });
 
   for (const stud of studentsList) {
@@ -577,7 +573,7 @@ const sendExamPublishNotifications = async (exam, creatorUser) => {
       recipientRole: 'student',
       recipientId: stud.id,
       title: 'New Exam Assigned',
-      message: `Exam "${exam.title}" is published for your branch (${exam.branchFilter || 'All'}) and year (${exam.yearFilter || 'All'}).`,
+      message: `Exam "${exam.title}" has been assigned to your batch.`,
       timestamp: new Date().toISOString(),
       read: false
     });
@@ -606,9 +602,7 @@ app.post('/api/exams', authenticate, authorize(['management']), async (req, res)
     randomized,
     attemptLimit,
     passCutoff,
-    branchFilter,
-    yearFilter,
-    assignedStudents,
+    batchId,
     windowStart,
     windowEnd,
     fullscreenRequired,
@@ -646,9 +640,7 @@ app.post('/api/exams', authenticate, authorize(['management']), async (req, res)
     randomized: randomized ?? true,
     attemptLimit: parseInt(attemptLimit) || 1,
     passCutoff: parseInt(passCutoff) || 40,
-    branchFilter: branchFilter || '',
-    yearFilter: yearFilter || '',
-    assignedStudents: assignedStudents || [],
+    batchId: batchId || '',
     windowStart: windowStart || new Date().toISOString().slice(0, 16),
     windowEnd: windowEnd || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
     fullscreenRequired: fullscreenRequired ?? true,
@@ -661,9 +653,8 @@ app.post('/api/exams', authenticate, authorize(['management']), async (req, res)
   };
 
   if (newExam.status === 'published') {
-    const isAssigned = newExam.branchFilter || newExam.yearFilter || (newExam.assignedStudents && newExam.assignedStudents.length > 0);
-    if (!isAssigned) {
-      return res.status(400).json({ message: 'Validation Error: Cannot publish an unassigned exam. Please assign to branches, years, or individual students first.' });
+    if (!newExam.batchId) {
+      return res.status(400).json({ message: 'Validation Error: Cannot publish an unassigned exam. Please assign a batch to this exam first.' });
     }
   }
 
@@ -679,7 +670,7 @@ app.post('/api/exams', authenticate, authorize(['management']), async (req, res)
     action: 'exam_created',
     performedBy: req.user.name,
     target: newExam.title,
-    details: `Exam "${newExam.title}" created with status "${newExam.status}".`,
+    details: `Exam "${newExam.title}" created and assigned to batch "${newExam.batchId}" with status "${newExam.status}".`,
     timestamp: new Date().toISOString()
   });
 
@@ -689,7 +680,7 @@ app.post('/api/exams', authenticate, authorize(['management']), async (req, res)
 // Update Exam Assignments
 app.put('/api/exams/:id/assignment', authenticate, authorize(['management']), async (req, res) => {
   const { id } = req.params;
-  const { assignedStudents, branchFilter, yearFilter, batchFilter } = req.body;
+  const { batchId } = req.body;
   const exams = getCollection('exams');
 
   const exam = await exams.findOne({ id, collegeId: req.user.collegeId });
@@ -697,21 +688,9 @@ app.put('/api/exams/:id/assignment', authenticate, authorize(['management']), as
     return res.status(404).json({ message: 'Exam sheet not found.' });
   }
 
-  await exams.updateOne({ id }, {
-    assignedStudents: assignedStudents || [],
-    branchFilter: branchFilter || '',
-    yearFilter: yearFilter || '',
-    batchFilter: batchFilter || ''
-  });
+  await exams.updateOne({ id }, { batchId: batchId || '' });
 
-  const updatedExam = {
-    ...exam,
-    assignedStudents: assignedStudents || [],
-    branchFilter: branchFilter || '',
-    yearFilter: yearFilter || '',
-    batchFilter: batchFilter || ''
-  };
-
+  const updatedExam = { ...exam, batchId: batchId || '' };
   return res.json({ message: 'Exam assignments updated successfully.', exam: updatedExam });
 });
 
@@ -738,9 +717,8 @@ app.patch('/api/exams/:id/publish-exam', authenticate, authorize(['management'])
     return res.status(404).json({ message: 'Exam sheet not found.' });
   }
 
-  const isAssigned = exam.branchFilter || exam.yearFilter || (exam.assignedStudents && exam.assignedStudents.length > 0);
-  if (!isAssigned) {
-    return res.status(400).json({ message: 'Validation Error: Cannot publish an unassigned exam. Please assign to branches, years, or individual students first.' });
+  if (!exam.batchId) {
+    return res.status(400).json({ message: 'Validation Error: Cannot publish an unassigned exam. Please assign a batch to this exam first.' });
   }
 
   await exams.updateOne({ id }, { status: 'published' });
@@ -754,7 +732,7 @@ app.patch('/api/exams/:id/publish-exam', authenticate, authorize(['management'])
     action: 'exam_published',
     performedBy: req.user.name,
     target: exam.title,
-    details: `Exam "${exam.title}" published to students.`,
+    details: `Exam "${exam.title}" published to batch "${exam.batchId}".`,
     timestamp: new Date().toISOString()
   });
 
@@ -775,13 +753,8 @@ app.get('/api/exams/student', authenticate, authorize(['student']), async (req, 
   const studentExams = [];
 
   for (const exam of allExams) {
-    const assignedToStudent = exam.assignedStudents && (exam.assignedStudents.includes(req.user.id) || exam.assignedStudents.includes(req.user.rollNumber));
-    const branchMatch = !exam.branchFilter || exam.branchFilter === req.user.branch;
-    const yearMatch = !exam.yearFilter || exam.yearFilter === req.user.year;
-    
-    if (!assignedToStudent && (exam.branchFilter || exam.yearFilter)) {
-      if (exam.branchFilter && exam.branchFilter !== req.user.branch) continue;
-      if (exam.yearFilter && exam.yearFilter !== req.user.year) continue;
+    if (String(exam.batchId || '') !== String(req.user.batchId || '')) {
+      continue;
     }
 
     const start = exam.windowStart ? new Date(exam.windowStart) : null;

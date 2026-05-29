@@ -379,6 +379,18 @@ app.get('/api/colleges/public', async (req, res) => {
   return res.json(list.map(c => ({ id: c.id, name: c.name, code: c.code, status: c.status })));
 });
 
+// List Batches for a College (Public endpoint for student registration)
+app.get('/api/colleges/:collegeId/batches', async (req, res) => {
+  try {
+    const { collegeId } = req.params;
+    const batches = getCollection('batches');
+    const list = await batches.find({ collegeId });
+    return res.json(list);
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
 // List Colleges
 app.get('/api/colleges', authenticate, authorize(['super_admin']), async (req, res) => {
   const colleges = getCollection('colleges');
