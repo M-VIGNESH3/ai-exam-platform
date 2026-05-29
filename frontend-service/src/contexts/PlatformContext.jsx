@@ -263,6 +263,17 @@ export const PlatformProvider = ({ children }) => {
         if (res.ok) {
           setApiActive(true);
           console.log('[PlatformContext] Connected to Express Core Backend.');
+          
+          // Fetch public colleges list
+          try {
+            const collegesRes = await fetch('/api/colleges/public');
+            if (collegesRes.ok) {
+              const publicColleges = await collegesRes.json();
+              setColleges(publicColleges);
+            }
+          } catch (colErr) {
+            console.error('Failed to fetch public colleges:', colErr);
+          }
         } else {
           setApiActive(false);
         }
@@ -1613,6 +1624,22 @@ export const PlatformProvider = ({ children }) => {
     }
   };
 
+  const assignExamStudents = async (examId, assignmentData) => {
+    if (apiActive) {
+      try {
+        const token = localStorage.getItem('access_token');
+        const res = await apiRequest(`/exams/${examId}/assignment`, 'PUT', assignmentData, token);
+        setExams(prev => prev.map(e => e.id === examId ? res.exam : e));
+        return res.exam;
+      } catch (err) {
+        addToast('Assignment Failed', err.message, 'danger');
+        throw err;
+      }
+    } else {
+      setExams(prev => prev.map(e => e.id === examId ? { ...e, ...assignmentData } : e));
+    }
+  };
+
   const publishExam = async (examId) => {
     if (apiActive) {
       try {
@@ -2227,6 +2254,7 @@ export const PlatformProvider = ({ children }) => {
       resendManagementAdminCredentials,
       processBulkUpload,
       scheduleExam,
+      assignExamStudents,
       publishExam,
       publishExamResults,
       forceTerminateExam,

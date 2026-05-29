@@ -117,9 +117,7 @@ const StudentRegister = ({ onBackToLogin }) => {
     if (!formData.section.trim()) {
       return 'Section is required';
     }
-    if (!formData.profilePhoto.trim()) {
-      return 'Profile Photo URL is required (simulated upload)';
-    }
+    // Profile photo is optional
     if (!isPasswordStrong) {
       return 'Password does not meet strength requirements';
     }
@@ -141,6 +139,7 @@ const StudentRegister = ({ onBackToLogin }) => {
     if (apiActive) {
       const result = await registerStudent({
         ...formData,
+        profilePhoto: formData.profilePhoto.trim() || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(formData.fullName)}`,
         collegeId: selectedCollege.id
       });
       if (result.success) {
@@ -180,6 +179,7 @@ const StudentRegister = ({ onBackToLogin }) => {
         // Register student in context state
         const result = await registerStudent({
           ...formData,
+          profilePhoto: formData.profilePhoto.trim() || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(formData.fullName)}`,
           collegeId: selectedCollege.id
         });
         if (result.success) {
@@ -371,8 +371,8 @@ const StudentRegister = ({ onBackToLogin }) => {
                   </select>
                 </div>
                 <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                  <label className="form-label">Profile Photo URL *</label>
-                  <input type="text" name="profilePhoto" className="form-control" value={formData.profilePhoto} onChange={handleInputChange} placeholder="https://api.dicebear.com/7.x/adventurer/svg?seed=John" required />
+                  <label className="form-label">Profile Photo URL (Optional)</label>
+                  <input type="text" name="profilePhoto" className="form-control" value={formData.profilePhoto} onChange={handleInputChange} placeholder="https://api.dicebear.com/7.x/adventurer/svg?seed=John" />
                   <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Simulate a profile photo by providing an image URL.</span>
                 </div>
               </div>

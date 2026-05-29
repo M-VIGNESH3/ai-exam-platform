@@ -459,12 +459,24 @@ app.post('/api/students/import', authenticate, authorize(['management']), upload
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
       const otpExpires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
 
+      const departmentMap = {
+        'CSE': 'Computer Science & Engineering',
+        'ECE': 'Electronics & Communication',
+        'EEE': 'Electrical & Electronics',
+        'EE': 'Electrical & Electronics',
+        'ME': 'Mechanical Engineering',
+        'CE': 'Civil Engineering',
+        'Civil': 'Civil Engineering',
+        'IT': 'Information Technology'
+      };
+
       imported.push({
         id: rollNumber,
         name: fullName,
         email,
         rollNumber,
         branch,
+        department: departmentMap[branch] || branch || 'General',
         year,
         mobileNumber,
         gender,

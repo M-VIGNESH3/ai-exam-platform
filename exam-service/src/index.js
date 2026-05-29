@@ -24,6 +24,48 @@ try {
   await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 2000 });
   mongooseConnected = true;
   console.log('[Exams] MongoDB connected successfully');
+  
+  if (mongoose.connection.db) {
+    const questionCols = mongoose.connection.db.collection('questions');
+    const questionCount = await questionCols.countDocuments();
+    if (questionCount === 0) {
+      await questionCols.insertMany([
+        {
+          id: 'q1',
+          subject: 'Artificial Intelligence',
+          topic: 'Machine Learning',
+          type: 'mcq',
+          difficulty: 'Medium',
+          questionText: 'Which of the following is an ensemble learning method that builds multiple decision trees and merges them together?',
+          options: [
+            { key: 'A', text: 'Support Vector Machine' },
+            { key: 'B', text: 'Random Forest' },
+            { key: 'C', text: 'Linear Regression' },
+            { key: 'D', text: 'K-Means Clustering' }
+          ],
+          correctAnswer: 'B',
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: 'q2',
+          subject: 'Artificial Intelligence',
+          topic: 'Neural Networks',
+          type: 'mcq',
+          difficulty: 'Easy',
+          questionText: 'What activation function is commonly used in the output layer of a binary classification neural network?',
+          options: [
+            { key: 'A', text: 'ReLU' },
+            { key: 'B', text: 'Tanh' },
+            { key: 'C', text: 'Sigmoid' },
+            { key: 'D', text: 'Softmax' }
+          ],
+          correctAnswer: 'C',
+          createdAt: new Date().toISOString()
+        }
+      ]);
+      console.log('[Exams Seed] Default questions seeded.');
+    }
+  }
 } catch (err) {
   console.log('[Exams] MongoDB connection failed. Falling back to persistent JSON storage.');
 }
@@ -642,6 +684,35 @@ app.post('/api/exams', authenticate, authorize(['management']), async (req, res)
   });
 
   return res.status(201).json({ message: 'Exam created successfully.', exam: newExam });
+});
+
+// Update Exam Assignments
+app.put('/api/exams/:id/assignment', authenticate, authorize(['management']), async (req, res) => {
+  const { id } = req.params;
+  const { assignedStudents, branchFilter, yearFilter, batchFilter } = req.body;
+  const exams = getCollection('exams');
+
+  const exam = await exams.findOne({ id, collegeId: req.user.collegeId });
+  if (!exam) {
+    return res.status(404).json({ message: 'Exam sheet not found.' });
+  }
+
+  await exams.updateOne({ id }, {
+    assignedStudents: assignedStudents || [],
+    branchFilter: branchFilter || '',
+    yearFilter: yearFilter || '',
+    batchFilter: batchFilter || ''
+  });
+
+  const updatedExam = {
+    ...exam,
+    assignedStudents: assignedStudents || [],
+    branchFilter: branchFilter || '',
+    yearFilter: yearFilter || '',
+    batchFilter: batchFilter || ''
+  };
+
+  return res.json({ message: 'Exam assignments updated successfully.', exam: updatedExam });
 });
 
 // List all exams

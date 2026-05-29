@@ -372,6 +372,13 @@ app.get('/api/colleges/admins', authenticate, authorize(['management']), async (
   return res.json(list);
 });
 
+// List Colleges (Public endpoint for student registration)
+app.get('/api/colleges/public', async (req, res) => {
+  const colleges = getCollection('colleges');
+  const list = await colleges.find({ status: 'active' });
+  return res.json(list.map(c => ({ id: c.id, name: c.name, code: c.code, status: c.status })));
+});
+
 // List Colleges
 app.get('/api/colleges', authenticate, authorize(['super_admin']), async (req, res) => {
   const colleges = getCollection('colleges');

@@ -26,6 +26,88 @@ try {
   await mongoose.connect(mongoUri, { serverSelectionTimeoutMS: 2000 });
   mongooseConnected = true;
   console.log('[Auth] MongoDB connected successfully');
+  
+  // Seed default data if empty
+  if (mongoose.connection.db) {
+    const collegeCols = mongoose.connection.db.collection('colleges');
+    const adminCols = mongoose.connection.db.collection('managementAdmins');
+    const studentCols = mongoose.connection.db.collection('students');
+    
+    // Seed colleges
+    const collegeCount = await collegeCols.countDocuments();
+    if (collegeCount === 0) {
+      await collegeCols.insertMany([
+        { id: 'c1', name: 'Imperial College of Science', code: 'ICS', status: 'active', departmentCount: 4, examCount: 3, createdAt: new Date().toISOString() },
+        { id: 'c2', name: 'Stanford Technical Institute', code: 'STI', status: 'active', departmentCount: 3, examCount: 2, createdAt: new Date().toISOString() }
+      ]);
+      console.log('[Auth Seed] Colleges seeded.');
+    }
+    
+    // Seed admins
+    const adminCount = await adminCols.countDocuments();
+    if (adminCount === 0) {
+      await adminCols.insertMany([
+        {
+          id: 'm1',
+          name: 'Admin Manager',
+          email: 'admin@ics.edu',
+          role: 'management',
+          department: 'All',
+          collegeId: 'c1',
+          collegeName: 'Imperial College of Science',
+          password: bcrypt.hashSync('admin123', 8),
+          mustResetPassword: false,
+          status: 'active',
+          createdAt: new Date().toISOString()
+        }
+      ]);
+      console.log('[Auth Seed] Management Admins seeded.');
+    }
+
+    // Seed students
+    const studentCount = await studentCols.countDocuments();
+    if (studentCount === 0) {
+      await studentCols.insertMany([
+        {
+          id: 's1',
+          name: 'John Doe',
+          email: 'john.doe@student.edu',
+          rollNumber: 'ICS-2024-001',
+          department: 'Computer Science & Engineering',
+          branch: 'CSE',
+          year: '3rd Year',
+          semester: '6th Semester',
+          status: 'active',
+          batchId: 'b1',
+          collegeId: 'c1',
+          collegeName: 'Imperial College of Science',
+          password: bcrypt.hashSync('admin123', 8),
+          mustResetPassword: false,
+          verified: true,
+          createdAt: new Date().toISOString()
+        },
+        {
+          id: 's2',
+          name: 'Jane Smith',
+          email: 'jane.smith@student.edu',
+          rollNumber: 'ICS-2024-002',
+          department: 'Computer Science & Engineering',
+          branch: 'CSE',
+          year: '3rd Year',
+          semester: '6th Semester',
+          status: 'active',
+          batchId: 'b1',
+          collegeId: 'c1',
+          collegeName: 'Imperial College of Science',
+          password: bcrypt.hashSync('admin123', 8),
+          mustResetPassword: false,
+          verified: true,
+          createdAt: new Date().toISOString()
+        }
+      ]);
+      console.log('[Auth Seed] Students seeded.');
+    }
+  }
 } catch (err) {
   console.log('[Auth] MongoDB connection failed. Falling back to persistent JSON storage.');
 }
@@ -304,12 +386,24 @@ app.post('/api/auth/register', async (req, res) => {
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
   const otpExpires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
 
+  const departmentMap = {
+    'CSE': 'Computer Science & Engineering',
+    'ECE': 'Electronics & Communication',
+    'EEE': 'Electrical & Electronics',
+    'EE': 'Electrical & Electronics',
+    'ME': 'Mechanical Engineering',
+    'CE': 'Civil Engineering',
+    'Civil': 'Civil Engineering',
+    'IT': 'Information Technology'
+  };
+
   const newStudent = {
     id: rollNumber,
     name: fullName,
     email: email.toLowerCase(),
     rollNumber,
     branch,
+    department: departmentMap[branch] || branch || 'General',
     year,
     mobileNumber: mobileNumber || '',
     gender: gender || 'Not Specified',

@@ -25,6 +25,7 @@ const ManagementPortal = () => {
     processBulkUpload,
     exams,
     scheduleExam,
+    assignExamStudents,
     publishExam,
     publishExamResults,
     attempts,
@@ -113,7 +114,8 @@ const ManagementPortal = () => {
   // Assignments States
   const [assignmentForm, setAssignmentForm] = useState({
     examId: '',
-    type: 'branch', // branch, roster
+    type: 'batch', // batch, branch, roster
+    batchId: '',
     branch: 'CSE',
     year: '1st Year',
     rosterText: ''
@@ -288,7 +290,7 @@ const ManagementPortal = () => {
     addToast('Success', 'Question paper assembled successfully.', 'success');
   };
 
-  const handleAssignmentSubmit = (e) => {
+  const handleAssignmentSubmit = async (e) => {
     e.preventDefault();
     if (!assignmentForm.examId) {
       addToast('Validation Error', 'Please select an exam to assign.', 'danger');
@@ -299,7 +301,26 @@ const ManagementPortal = () => {
     if (!exam) return;
 
     let targetStudents = [];
-    if (assignmentForm.type === 'branch') {
+    let branchFilter = '';
+    let yearFilter = '';
+    let batchFilter = '';
+
+    if (assignmentForm.type === 'batch') {
+      const selectedBatch = batches.find(b => b.id === assignmentForm.batchId);
+      if (!selectedBatch) {
+        addToast('Validation Error', 'Please select a student batch.', 'danger');
+        return;
+      }
+      targetStudents = students
+        .filter(s => s.batchId === assignmentForm.batchId)
+        .map(s => s.id);
+      
+      if (targetStudents.length === 0) {
+        addToast('No Students Found', `No students found registered under batch: ${selectedBatch.name}`, 'warning');
+        return;
+      }
+      batchFilter = selectedBatch.name;
+    } else if (assignmentForm.type === 'branch') {
       targetStudents = students
         .filter(s => s.branch === assignmentForm.branch && s.year === assignmentForm.year)
         .map(s => s.id);
@@ -308,6 +329,8 @@ const ManagementPortal = () => {
         addToast('No Students Found', `No students found matching ${assignmentForm.branch} - ${assignmentForm.year}`, 'warning');
         return;
       }
+      branchFilter = assignmentForm.branch;
+      yearFilter = assignmentForm.year;
     } else {
       const rollNumbers = assignmentForm.rosterText
         .split(/[\n,]+/)
@@ -324,24 +347,26 @@ const ManagementPortal = () => {
       }
     }
 
-    exam.assignedStudents = targetStudents;
-    if (assignmentForm.type === 'branch') {
-      exam.branchFilter = assignmentForm.branch;
-      exam.yearFilter = assignmentForm.year;
-    } else {
-      exam.branchFilter = '';
-      exam.yearFilter = '';
+    try {
+      await assignExamStudents(exam.id, {
+        assignedStudents: targetStudents,
+        branchFilter,
+        yearFilter,
+        batchFilter
+      });
+      addToast('Students Assigned', `Assigned ${targetStudents.length} students to ${exam.title} successfully.`, 'success');
+      
+      setAssignmentForm({
+        examId: '',
+        type: 'batch',
+        batchId: '',
+        branch: 'CSE',
+        year: '1st Year',
+        rosterText: ''
+      });
+    } catch (err) {
+      console.error(err);
     }
-    
-    addToast('Students Assigned', `Assigned ${targetStudents.length} students to ${exam.title}`, 'success');
-    
-    setAssignmentForm({
-      examId: '',
-      type: 'branch',
-      branch: 'CSE',
-      year: '1st Year',
-      rosterText: ''
-    });
   };
 
   const handleBulkQuestionImport = (e) => {
@@ -890,7 +915,7 @@ const ManagementPortal = () => {
                               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{s.email}</div>
                             </td>
                             <td><code>{s.rollNumber}</code></td>
-                            <td>{s.department || 'General'}</td>
+                            <td>{s.department || s.branch || 'General'}</td>
                             <td><span className="badge badge-info">{batch ? batch.name : 'Unassigned'}</span></td>
                             <td>
                               <span className={`badge ${s.status === 'active' ? 'badge-success' : s.status === 'pending' ? 'badge-info' : 'badge-danger'}`}>
@@ -1806,19 +1831,33 @@ const ManagementPortal = () => {
 
                 <div className="form-group">
                   <label className="form-label">Assignment Method *</label>
-                  <div style={{ display: 'flex', gap: '1rem', marginTop: '0.25rem' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.85rem' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginTop: '0.25rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                      <input type="radio" checked={assignmentForm.type === 'batch'} onChange={() => setAssignmentForm({ ...assignmentForm, type: 'batch' })} />
+                      Assign by Batch
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.85rem', cursor: 'pointer' }}>
                       <input type="radio" checked={assignmentForm.type === 'branch'} onChange={() => setAssignmentForm({ ...assignmentForm, type: 'branch' })} />
                       Branch & Year Match
                     </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.85rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.85rem', cursor: 'pointer' }}>
                       <input type="radio" checked={assignmentForm.type === 'roster'} onChange={() => setAssignmentForm({ ...assignmentForm, type: 'roster' })} />
                       Roll Number Roster List
                     </label>
                   </div>
                 </div>
 
-                {assignmentForm.type === 'branch' ? (
+                {assignmentForm.type === 'batch' ? (
+                  <div className="form-group">
+                    <label className="form-label">Select Student Batch *</label>
+                    <select className="form-control form-select" value={assignmentForm.batchId} onChange={(e) => setAssignmentForm({ ...assignmentForm, batchId: e.target.value })} required={assignmentForm.type === 'batch'}>
+                      <option value="">-- Choose Batch --</option>
+                      {batches.map(b => (
+                        <option key={b.id} value={b.id}>{b.name} ({b.department})</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : assignmentForm.type === 'branch' ? (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                     <div className="form-group">
                       <label className="form-label">Branch Filter</label>
