@@ -477,14 +477,7 @@ Result State: ${attempt.status.toUpperCase()}
     const collegeMatch = examCollegeId === studentCollegeId;
     if (!collegeMatch) return false;
 
-    let isAssigned = false;
-    if (e.assignedStudents && e.assignedStudents.length > 0) {
-      isAssigned = e.assignedStudents.includes(currentUser.id) || e.assignedStudents.includes(currentUser.rollNumber);
-    } else {
-      const branchMatch = !e.branchFilter || e.branchFilter === currentUser.branch;
-      const yearMatch = !e.yearFilter || e.yearFilter === currentUser.year;
-      isAssigned = branchMatch && yearMatch;
-    }
+    const isAssigned = !e.batchId || String(e.batchId) === String(currentUser.batchId || '');
     if (!isAssigned) return false;
 
     const now = new Date();
