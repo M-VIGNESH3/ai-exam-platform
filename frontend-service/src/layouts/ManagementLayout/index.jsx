@@ -25,6 +25,7 @@ const ManagementPortal = () => {
     processBulkUpload,
     exams,
     scheduleExam,
+    publishExam,
     publishExamResults,
     attempts,
     forceTerminateExam,
@@ -40,6 +41,13 @@ const ManagementPortal = () => {
     auditLogs,
     logAuditEvent,
     questions,
+    questionPapers,
+    addQuestion,
+    editQuestion,
+    deleteQuestion,
+    bulkImportQuestions,
+    addQuestionPaper,
+    deleteQuestionPaper,
     apiActive
   } = usePlatform();
 
@@ -64,23 +72,67 @@ const ManagementPortal = () => {
   const [isValidating, setIsValidating] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
 
+  // Question Bank States
+  const [qSearch, setQSearch] = useState('');
+  const [qSubject, setQSubject] = useState('');
+  const [qTopic, setQTopic] = useState('');
+  const [qDifficulty, setQDifficulty] = useState('');
+  const [qBranch, setQBranch] = useState('');
+  const [isEditingQuestion, setIsEditingQuestion] = useState(false);
+  const [questionForm, setQuestionForm] = useState({
+    id: '',
+    questionText: '',
+    optionA: '',
+    optionB: '',
+    optionC: '',
+    optionD: '',
+    correctAnswer: 'A',
+    difficulty: 'Medium',
+    subject: '',
+    topic: '',
+    branch: 'CSE',
+    marks: 1
+  });
+  const [bulkQFile, setBulkQFile] = useState(null);
+  const [bulkQError, setBulkQError] = useState(null);
+  const [bulkQSuccess, setBulkQSuccess] = useState(null);
+
+  // Question Paper Builder States
+  const [paperForm, setPaperForm] = useState({
+    title: '',
+    subject: '',
+    selectedQuestions: [],
+    questionMarks: {},
+    totalMarks: 0
+  });
+  const [paperQSearch, setPaperQSearch] = useState('');
+  const [paperQSubject, setPaperQSubject] = useState('');
+  const [paperQDifficulty, setPaperQDifficulty] = useState('');
+  const [randomCount, setRandomCount] = useState(5);
+
+  // Assignments States
+  const [assignmentForm, setAssignmentForm] = useState({
+    examId: '',
+    type: 'branch', // branch, roster
+    branch: 'CSE',
+    year: '1st Year',
+    rosterText: ''
+  });
+
   // Schedule Exam States
   const [examForm, setExamForm] = useState({
     title: '',
     subject: '',
-    department: 'Computer Science & Engineering',
+    questionPaperId: '',
     duration: 60,
     negativeMarking: 0.25,
     randomized: true,
     attemptLimit: 1,
     passCutoff: 40,
-    branchFilter: 'CSE',
-    yearFilter: '1st Year',
     windowStart: new Date().toISOString().slice(0, 16),
-    windowEnd: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString().slice(0, 16),
-    batches: ['b1'],
-    scheduledDate: '2026-05-30',
-    scheduledTime: '10:00 AM'
+    windowEnd: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
+    fullscreenRequired: true,
+    aiProctoringEnabled: true
   });
 
   // Force Terminate Modal State
@@ -131,28 +183,267 @@ const ManagementPortal = () => {
   // Exam Schedule assignment
   const handleExamSubmit = (e) => {
     e.preventDefault();
-    if (!examForm.title.trim() || !examForm.subject.trim()) {
-      addToast('Validation Error', 'Exam title and subject are required.', 'danger');
+    if (!examForm.title.trim() || !examForm.subject.trim() || !examForm.questionPaperId) {
+      addToast('Validation Error', 'Exam title, subject, and question paper are required.', 'danger');
       return;
     }
-    scheduleExam(examForm);
+    scheduleExam({
+      ...examForm,
+      status: 'draft',
+      assignedStudents: []
+    });
     setExamForm({
       title: '',
       subject: '',
-      department: 'Computer Science & Engineering',
+      questionPaperId: '',
       duration: 60,
       negativeMarking: 0.25,
       randomized: true,
       attemptLimit: 1,
       passCutoff: 40,
-      branchFilter: 'CSE',
-      yearFilter: '1st Year',
       windowStart: new Date().toISOString().slice(0, 16),
-      windowEnd: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString().slice(0, 16),
-      batches: ['b1'],
-      scheduledDate: '2026-05-30',
-      scheduledTime: '10:00 AM'
+      windowEnd: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
+      fullscreenRequired: true,
+      aiProctoringEnabled: true
     });
+    addToast('Exam Scheduled', 'Exam scheduled as Draft. Please assign students and publish.', 'success');
+  };
+
+  const handleQuestionSubmit = (e) => {
+    e.preventDefault();
+    if (!questionForm.questionText.trim() || !questionForm.optionA.trim() || !questionForm.optionB.trim()) {
+      addToast('Validation Error', 'Question text and Options A & B are required.', 'danger');
+      return;
+    }
+    
+    const formatted = {
+      ...questionForm,
+      options: [
+        { key: 'A', text: questionForm.optionA },
+        { key: 'B', text: questionForm.optionB },
+        ...(questionForm.optionC ? [{ key: 'C', text: questionForm.optionC }] : []),
+        ...(questionForm.optionD ? [{ key: 'D', text: questionForm.optionD }] : [])
+      ],
+      marks: parseInt(questionForm.marks) || 1
+    };
+
+    if (isEditingQuestion) {
+      editQuestion(questionForm.id, formatted);
+      setIsEditingQuestion(false);
+      addToast('Question Updated', 'Question details saved.', 'success');
+    } else {
+      addQuestion(formatted);
+      addToast('Question Created', 'Added to question bank.', 'success');
+    }
+
+    setQuestionForm({
+      id: '',
+      questionText: '',
+      optionA: '',
+      optionB: '',
+      optionC: '',
+      optionD: '',
+      correctAnswer: 'A',
+      difficulty: 'Medium',
+      subject: '',
+      topic: '',
+      branch: 'CSE',
+      marks: 1
+    });
+  };
+
+  const handleQuestionDelete = (id) => {
+    if (window.confirm('Delete this question permanently from the bank?')) {
+      deleteQuestion(id);
+      addToast('Question Deleted', 'Removed from question bank.', 'warning');
+    }
+  };
+
+  const handlePaperSubmit = (e) => {
+    e.preventDefault();
+    if (!paperForm.title.trim() || !paperForm.subject.trim()) {
+      addToast('Validation Error', 'Title and subject are required.', 'danger');
+      return;
+    }
+    if (paperForm.selectedQuestions.length === 0) {
+      addToast('Validation Error', 'Please select at least one question for the paper.', 'danger');
+      return;
+    }
+
+    addQuestionPaper({
+      title: paperForm.title,
+      subject: paperForm.subject,
+      questions: paperForm.selectedQuestions,
+      marks: paperForm.questionMarks,
+      totalMarks: paperForm.totalMarks
+    });
+
+    setPaperForm({
+      title: '',
+      subject: '',
+      selectedQuestions: [],
+      questionMarks: {},
+      totalMarks: 0
+    });
+    addToast('Success', 'Question paper assembled successfully.', 'success');
+  };
+
+  const handleAssignmentSubmit = (e) => {
+    e.preventDefault();
+    if (!assignmentForm.examId) {
+      addToast('Validation Error', 'Please select an exam to assign.', 'danger');
+      return;
+    }
+
+    const exam = exams.find(ex => ex.id === assignmentForm.examId);
+    if (!exam) return;
+
+    let targetStudents = [];
+    if (assignmentForm.type === 'branch') {
+      targetStudents = students
+        .filter(s => s.branch === assignmentForm.branch && s.year === assignmentForm.year)
+        .map(s => s.id);
+      
+      if (targetStudents.length === 0) {
+        addToast('No Students Found', `No students found matching ${assignmentForm.branch} - ${assignmentForm.year}`, 'warning');
+        return;
+      }
+    } else {
+      const rollNumbers = assignmentForm.rosterText
+        .split(/[\n,]+/)
+        .map(r => r.trim())
+        .filter(Boolean);
+      
+      targetStudents = students
+        .filter(s => rollNumbers.includes(s.rollNumber))
+        .map(s => s.id);
+
+      if (targetStudents.length === 0) {
+        addToast('No Students Matched', 'Ensure roll numbers match registered students.', 'danger');
+        return;
+      }
+    }
+
+    exam.assignedStudents = targetStudents;
+    if (assignmentForm.type === 'branch') {
+      exam.branchFilter = assignmentForm.branch;
+      exam.yearFilter = assignmentForm.year;
+    } else {
+      exam.branchFilter = '';
+      exam.yearFilter = '';
+    }
+    
+    addToast('Students Assigned', `Assigned ${targetStudents.length} students to ${exam.title}`, 'success');
+    
+    setAssignmentForm({
+      examId: '',
+      type: 'branch',
+      branch: 'CSE',
+      year: '1st Year',
+      rosterText: ''
+    });
+  };
+
+  const handleBulkQuestionImport = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target.result;
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      if (lines.length <= 1) {
+        setBulkQError('CSV file is empty or missing headers.');
+        return;
+      }
+
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      const qIndex = headers.indexOf('question');
+      const optA = headers.indexOf('option a');
+      const optB = headers.indexOf('option b');
+      const optC = headers.indexOf('option c');
+      const optD = headers.indexOf('option d');
+      const ansIndex = headers.indexOf('correct answer');
+      const diffIndex = headers.indexOf('difficulty');
+      const subjIndex = headers.indexOf('subject');
+      const topicIndex = headers.indexOf('topic');
+      const marksIndex = headers.indexOf('marks');
+
+      if (qIndex === -1 || optA === -1 || optB === -1 || ansIndex === -1) {
+        setBulkQError('Missing columns. Headers must contain: Question, Option A, Option B, Correct Answer');
+        return;
+      }
+
+      const parsedQuestions = [];
+      const errors = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const row = [];
+        let insideQuote = false;
+        let entry = '';
+        for (let char of lines[i]) {
+          if (char === '"') {
+            insideQuote = !insideQuote;
+          } else if (char === ',' && !insideQuote) {
+            row.push(entry.trim());
+            entry = '';
+          } else {
+            entry += char;
+          }
+        }
+        row.push(entry.trim());
+
+        if (row.length < 4) continue;
+
+        const qText = row[qIndex];
+        const aText = row[optA];
+        const bText = row[optB];
+        const cText = optC !== -1 ? row[optC] : '';
+        const dText = optD !== -1 ? row[optD] : '';
+        const answer = row[ansIndex]?.toUpperCase();
+        const difficulty = diffIndex !== -1 ? row[diffIndex] : 'Medium';
+        const subject = subjIndex !== -1 ? row[subjIndex] : 'General';
+        const topic = topicIndex !== -1 ? row[topicIndex] : '';
+        const marks = marksIndex !== -1 ? parseInt(row[marksIndex]) || 1 : 1;
+
+        if (!qText || !aText || !bText || !answer) {
+          errors.push(`Row ${i + 1}: Missing required fields.`);
+          continue;
+        }
+
+        if (!['A', 'B', 'C', 'D'].includes(answer)) {
+          errors.push(`Row ${i + 1}: Invalid correct answer (must be A, B, C, or D).`);
+          continue;
+        }
+
+        parsedQuestions.push({
+          questionText: qText,
+          options: [
+            { key: 'A', text: aText },
+            { key: 'B', text: bText },
+            ...(cText ? [{ key: 'C', text: cText }] : []),
+            ...(dText ? [{ key: 'D', text: dText }] : [])
+          ],
+          correctAnswer: answer,
+          difficulty,
+          subject,
+          topic,
+          branch: 'CSE',
+          marks
+        });
+      }
+
+      if (errors.length > 0) {
+        setBulkQError(errors.slice(0, 5).join(' | '));
+        setBulkQSuccess(null);
+      } else {
+        bulkImportQuestions(parsedQuestions);
+        setBulkQSuccess(`Successfully imported ${parsedQuestions.length} questions.`);
+        setBulkQError(null);
+        addToast('Import Completed', `${parsedQuestions.length} questions added to bank.`, 'success');
+      }
+    };
+    reader.readAsText(file);
   };
 
   // Download Sample Templates
@@ -326,6 +617,7 @@ const ManagementPortal = () => {
         </div>
 
         <ul className="sidebar-menu">
+          <li className="sidebar-section-header" style={{ padding: '0.75rem 1rem 0.25rem', fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.05em' }}>Core Operations</li>
           <li>
             <button className={`sidebar-item ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
               <BarChart3 size={18} />
@@ -339,15 +631,37 @@ const ManagementPortal = () => {
             </button>
           </li>
           <li>
-            <button className={`sidebar-item ${activeTab === 'bulk' ? 'active' : ''}`} onClick={() => setActiveTab('bulk')}>
-              <Upload size={18} />
-              Bulk Upload ⭐
+            <button className={`sidebar-item ${activeTab === 'audit' ? 'active' : ''}`} onClick={() => setActiveTab('audit')}>
+              <ClipboardList size={18} />
+              Audit Logs ⭐
             </button>
           </li>
+
+          <li className="sidebar-section-header" style={{ padding: '0.75rem 1rem 0.25rem', fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.05em' }}>Question Management</li>
+          <li>
+            <button className={`sidebar-item ${activeTab === 'questions' ? 'active' : ''}`} onClick={() => setActiveTab('questions')}>
+              <HelpCircle size={18} />
+              Question Bank
+            </button>
+          </li>
+          <li>
+            <button className={`sidebar-item ${activeTab === 'question_papers' ? 'active' : ''}`} onClick={() => setActiveTab('question_papers')}>
+              <FileText size={18} />
+              Question Papers
+            </button>
+          </li>
+
+          <li className="sidebar-section-header" style={{ padding: '0.75rem 1rem 0.25rem', fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.05em' }}>Exam Management</li>
           <li>
             <button className={`sidebar-item ${activeTab === 'exams' ? 'active' : ''}`} onClick={() => setActiveTab('exams')}>
               <BookOpen size={18} />
               Exam Schedules
+            </button>
+          </li>
+          <li>
+            <button className={`sidebar-item ${activeTab === 'assignments' ? 'active' : ''}`} onClick={() => setActiveTab('assignments')}>
+              <Users size={18} />
+              Rosters & Assignments
             </button>
           </li>
           <li>
@@ -357,21 +671,23 @@ const ManagementPortal = () => {
             </button>
           </li>
           <li>
-            <button className={`sidebar-item ${activeTab === 'emails' ? 'active' : ''}`} onClick={() => setActiveTab('emails')}>
-              <Mail size={18} />
-              Email Outbox Log ⭐
-            </button>
-          </li>
-          <li>
             <button className={`sidebar-item ${activeTab === 'reports' ? 'active' : ''}`} onClick={() => setActiveTab('reports')}>
               <FileText size={18} />
               Result Reports
             </button>
           </li>
+
+          <li className="sidebar-section-header" style={{ padding: '0.75rem 1rem 0.25rem', fontSize: '0.7rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 700, letterSpacing: '0.05em' }}>Integrations & Logs</li>
           <li>
-            <button className={`sidebar-item ${activeTab === 'audit' ? 'active' : ''}`} onClick={() => setActiveTab('audit')}>
-              <ClipboardList size={18} />
-              Audit Logs ⭐
+            <button className={`sidebar-item ${activeTab === 'bulk' ? 'active' : ''}`} onClick={() => setActiveTab('bulk')}>
+              <Upload size={18} />
+              Bulk Upload ⭐
+            </button>
+          </li>
+          <li>
+            <button className={`sidebar-item ${activeTab === 'emails' ? 'active' : ''}`} onClick={() => setActiveTab('emails')}>
+              <Mail size={18} />
+              Email Outbox Log ⭐
             </button>
           </li>
         </ul>
@@ -952,7 +1268,6 @@ const ManagementPortal = () => {
           </div>
         )}
 
-        {/* 4. Exam Management */}
         {activeTab === 'exams' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.8fr', gap: '1.5rem' }}>
             <div className="card" style={{ alignSelf: 'start' }}>
@@ -966,32 +1281,23 @@ const ManagementPortal = () => {
                   <label className="form-label">Subject *</label>
                   <input type="text" className="form-control" placeholder="Artificial Intelligence" value={examForm.subject} onChange={(e) => setExamForm({ ...examForm, subject: e.target.value })} required />
                 </div>
-                
-                <h4 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.2rem', marginTop: '0.5rem' }}>Visibility & Target Audience</h4>
-                
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                  <div className="form-group">
-                    <label className="form-label">Target Branch *</label>
-                    <select className="form-control form-select" value={examForm.branchFilter} onChange={(e) => setExamForm({ ...examForm, branchFilter: e.target.value })}>
-                      <option value="CSE">CSE</option>
-                      <option value="ECE">ECE</option>
-                      <option value="EEE">EEE</option>
-                      <option value="ME">ME</option>
-                      <option value="CE">CE</option>
-                      <option value="IT">IT</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Target Year *</label>
-                    <select className="form-control form-select" value={examForm.yearFilter} onChange={(e) => setExamForm({ ...examForm, yearFilter: e.target.value })}>
-                      <option value="1st Year">1st Year</option>
-                      <option value="2nd Year">2nd Year</option>
-                      <option value="3rd Year">3rd Year</option>
-                      <option value="4th Year">4th Year</option>
-                    </select>
-                  </div>
-                </div>
 
+                <div className="form-group">
+                  <label className="form-label">Select Question Paper *</label>
+                  {questionPapers.length === 0 ? (
+                    <div style={{ fontSize: '0.75rem', color: 'var(--color-danger)' }}>
+                      No question papers assembled. Build one in "Question Papers" first.
+                    </div>
+                  ) : (
+                    <select className="form-control form-select" value={examForm.questionPaperId} onChange={(e) => setExamForm({ ...examForm, questionPaperId: e.target.value })} required>
+                      <option value="">-- Choose Question Paper --</option>
+                      {questionPapers.map(qp => (
+                        <option key={qp.id} value={qp.id}>{qp.title} ({qp.subject} - {qp.questions.length} MCQs)</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                
                 <h4 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.2rem', marginTop: '0.5rem' }}>Exam Rules & Constraints</h4>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
@@ -1020,6 +1326,17 @@ const ManagementPortal = () => {
                   </div>
                 </div>
 
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBlock: '0.5rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                    <input type="checkbox" checked={examForm.fullscreenRequired} onChange={(e) => setExamForm({ ...examForm, fullscreenRequired: e.target.checked })} />
+                    Enforce Mandatory Fullscreen Tab-Lock
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem' }}>
+                    <input type="checkbox" checked={examForm.aiProctoringEnabled} onChange={(e) => setExamForm({ ...examForm, aiProctoringEnabled: e.target.checked })} />
+                    Enable AI Proctoring Device Calibration
+                  </label>
+                </div>
+
                 <h4 style={{ fontSize: '0.85rem', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.2rem', marginTop: '0.5rem' }}>Availability Window</h4>
 
                 <div className="form-group">
@@ -1031,7 +1348,9 @@ const ManagementPortal = () => {
                   <input type="datetime-local" className="form-control" value={examForm.windowEnd} onChange={(e) => setExamForm({ ...examForm, windowEnd: e.target.value })} required />
                 </div>
 
-                <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.5rem' }}>Schedule Exam</button>
+                <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.5rem' }} disabled={questionPapers.length === 0}>
+                  Schedule Draft Exam
+                </button>
               </form>
             </div>
 
@@ -1042,42 +1361,524 @@ const ManagementPortal = () => {
                   <thead>
                     <tr>
                       <th>Exam Code & Title</th>
-                      <th>Batches</th>
-                      <th>Negative Mark</th>
+                      <th>Assigned Roster</th>
+                      <th>Constraints</th>
                       <th>Status</th>
-                      <th>Results Action</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {exams.map(e => (
-                      <tr key={e.id}>
-                        <td>
-                          <strong>{e.title}</strong>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{e.subject} • {e.duration} mins</div>
-                        </td>
-                        <td>
-                          {(e.batches || []).map(bId => {
-                            const b = batches.find(ba => ba.id === bId);
-                            return <span key={bId} className="badge badge-info" style={{ marginRight: '0.25rem' }}>{b ? b.name : 'Unknown'}</span>;
-                          })}
-                        </td>
-                        <td><code>{e.negativeMarking}</code></td>
-                        <td>
-                          <span className="badge badge-success">{e.status}</span>
-                        </td>
-                        <td>
-                          {e.publishedResults ? (
-                            <span className="badge badge-success">Results Published</span>
-                          ) : (
-                            <button className="btn btn-secondary btn-sm" onClick={() => publishExamResults(e.id)}>
-                              Publish Results ⭐
-                            </button>
-                          )}
+                    {exams.length === 0 ? (
+                      <tr>
+                        <td colSpan="5" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>
+                          No scheduled exams found.
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      exams.map(e => {
+                        const qp = questionPapers.find(p => p.id === e.questionPaperId);
+                        return (
+                          <tr key={e.id}>
+                            <td>
+                              <strong>{e.title}</strong>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                {e.subject} • {e.duration} mins • Paper: {qp ? qp.title : 'None'}
+                              </div>
+                            </td>
+                            <td>
+                              {e.assignedStudents && e.assignedStudents.length > 0 ? (
+                                <span className="badge badge-info">{e.assignedStudents.length} Students Assigned</span>
+                              ) : e.branchFilter ? (
+                                <span className="badge badge-secondary">{e.branchFilter} - {e.yearFilter}</span>
+                              ) : (
+                                <span className="badge badge-danger">Unassigned</span>
+                              )}
+                            </td>
+                            <td>
+                              <div style={{ fontSize: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                                <span>Neg Mark: <code>{e.negativeMarking}</code></span>
+                                <span>Tab Lock: {e.fullscreenRequired ? 'Yes' : 'No'}</span>
+                                <span>AI Proctor: {e.aiProctoringEnabled ? 'Yes' : 'No'}</span>
+                              </div>
+                            </td>
+                            <td>
+                              <span className={`badge ${e.status === 'published' ? 'badge-success' : 'badge-warning'}`}>
+                                {e.status.toUpperCase()}
+                              </span>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                {e.status === 'draft' && (
+                                  <button className="btn btn-primary btn-sm" onClick={() => {
+                                    if (!e.assignedStudents || e.assignedStudents.length === 0) {
+                                      addToast('Publish Rejected', 'Roster must be assigned before publishing.', 'danger');
+                                      return;
+                                    }
+                                    publishExam(e.id);
+                                    addToast('Success', 'Exam published to students portal.', 'success');
+                                  }}>
+                                    Publish Exam
+                                  </button>
+                                )}
+                                {!e.publishedResults ? (
+                                  <button className="btn btn-secondary btn-sm" onClick={() => publishExamResults(e.id)}>
+                                    Publish Results
+                                  </button>
+                                ) : (
+                                  <span className="badge badge-success" style={{ alignSelf: 'flex-start' }}>Results Active</span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Question Bank */}
+        {activeTab === 'questions' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.8fr', gap: '1.5rem' }}>
+            {/* Left Column: Form & Bulk upload */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              <div className="card">
+                <h3 className="card-title">{isEditingQuestion ? 'Edit Bank Question' : 'Add New Question'}</h3>
+                <form onSubmit={handleQuestionSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
+                  <div className="form-group">
+                    <label className="form-label">Question Text *</label>
+                    <textarea className="form-control" rows="3" placeholder="Enter question description..." value={questionForm.questionText} onChange={(e) => setQuestionForm({ ...questionForm, questionText: e.target.value })} required />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">Option A *</label>
+                      <input type="text" className="form-control" placeholder="Option A" value={questionForm.optionA} onChange={(e) => setQuestionForm({ ...questionForm, optionA: e.target.value })} required />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Option B *</label>
+                      <input type="text" className="form-control" placeholder="Option B" value={questionForm.optionB} onChange={(e) => setQuestionForm({ ...questionForm, optionB: e.target.value })} required />
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">Option C</label>
+                      <input type="text" className="form-control" placeholder="Option C (Optional)" value={questionForm.optionC} onChange={(e) => setQuestionForm({ ...questionForm, optionC: e.target.value })} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Option D</label>
+                      <input type="text" className="form-control" placeholder="Option D (Optional)" value={questionForm.optionD} onChange={(e) => setQuestionForm({ ...questionForm, optionD: e.target.value })} />
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '0.75rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">Correct Option *</label>
+                      <select className="form-control form-select" value={questionForm.correctAnswer} onChange={(e) => setQuestionForm({ ...questionForm, correctAnswer: e.target.value })} required>
+                        <option value="A">Option A</option>
+                        <option value="B">Option B</option>
+                        <option value="C" disabled={!questionForm.optionC}>Option C</option>
+                        <option value="D" disabled={!questionForm.optionD}>Option D</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Default Marks</label>
+                      <input type="number" className="form-control" value={questionForm.marks} onChange={(e) => setQuestionForm({ ...questionForm, marks: parseInt(e.target.value) || 1 })} min="1" required />
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">Difficulty *</label>
+                      <select className="form-control form-select" value={questionForm.difficulty} onChange={(e) => setQuestionForm({ ...questionForm, difficulty: e.target.value })}>
+                        <option value="Easy">Easy</option>
+                        <option value="Medium">Medium</option>
+                        <option value="Hard">Hard</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Branch Code</label>
+                      <select className="form-control form-select" value={questionForm.branch} onChange={(e) => setQuestionForm({ ...questionForm, branch: e.target.value })}>
+                        <option value="CSE">CSE</option>
+                        <option value="ECE">ECE</option>
+                        <option value="EEE">EEE</option>
+                        <option value="ME">ME</option>
+                        <option value="CE">CE</option>
+                        <option value="IT">IT</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">Subject Title *</label>
+                      <input type="text" className="form-control" placeholder="e.g. Physics" value={questionForm.subject} onChange={(e) => setQuestionForm({ ...questionForm, subject: e.target.value })} required />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Topic Tag</label>
+                      <input type="text" className="form-control" placeholder="e.g. Mechanics" value={questionForm.topic} onChange={(e) => setQuestionForm({ ...questionForm, topic: e.target.value })} />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
+                      {isEditingQuestion ? 'Update Question' : 'Save Question'}
+                    </button>
+                    {isEditingQuestion && (
+                      <button type="button" className="btn btn-secondary" onClick={() => {
+                        setIsEditingQuestion(false);
+                        setQuestionForm({
+                          id: '', questionText: '', optionA: '', optionB: '', optionC: '', optionD: '',
+                          correctAnswer: 'A', difficulty: 'Medium', subject: '', topic: '', branch: 'CSE', marks: 1
+                        });
+                      }}>Cancel</button>
+                    )}
+                  </div>
+                </form>
+              </div>
+
+              <div className="card">
+                <h3 className="card-title">Bulk Import Questions</h3>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+                  Import questions via CSV file. Column Headers: <code>Question, Option A, Option B, Option C, Option D, Correct Answer, Difficulty, Subject, Topic, Marks</code>
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <input type="file" className="form-control" accept=".csv" onChange={handleBulkQuestionImport} />
+                  {bulkQSuccess && <div style={{ fontSize: '0.75rem', color: 'var(--color-success)' }}>{bulkQSuccess}</div>}
+                  {bulkQError && <div style={{ fontSize: '0.75rem', color: 'var(--color-danger)', whiteSpace: 'pre-wrap' }}>{bulkQError}</div>}
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Listings & Filters */}
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+                <h3 className="card-title" style={{ margin: 0 }}>Question Bank Directory</h3>
+                <span className="badge badge-info">{questions.length} Questions</span>
+              </div>
+
+              {/* Filters */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.5rem' }}>
+                <input type="text" className="form-control" placeholder="Search text..." value={qSearch} onChange={(e) => setQSearch(e.target.value)} />
+                <input type="text" className="form-control" placeholder="Subject..." value={qSubject} onChange={(e) => setQSubject(e.target.value)} />
+                <select className="form-control form-select" value={qDifficulty} onChange={(e) => setQDifficulty(e.target.value)}>
+                  <option value="">Difficulty</option>
+                  <option value="Easy">Easy</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Hard">Hard</option>
+                </select>
+                <select className="form-control form-select" value={qBranch} onChange={(e) => setQBranch(e.target.value)}>
+                  <option value="">Branch</option>
+                  <option value="CSE">CSE</option>
+                  <option value="ECE">ECE</option>
+                  <option value="ME">ME</option>
+                  <option value="IT">IT</option>
+                </select>
+              </div>
+
+              {/* List */}
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '550px' }}>
+                {questions
+                  .filter(q => {
+                    const matchesSearch = !qSearch || q.questionText.toLowerCase().includes(qSearch.toLowerCase()) || (q.topic && q.topic.toLowerCase().includes(qSearch.toLowerCase()));
+                    const matchesSubject = !qSubject || q.subject.toLowerCase().includes(qSubject.toLowerCase());
+                    const matchesDiff = !qDifficulty || q.difficulty === qDifficulty;
+                    const matchesBranch = !qBranch || q.branch === qBranch;
+                    return matchesSearch && matchesSubject && matchesDiff && matchesBranch;
+                  })
+                  .map(q => (
+                    <div key={q.id} style={{
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '1rem',
+                      backgroundColor: 'var(--bg-surface-hover)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.5rem'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                          <span className="badge badge-info">{q.subject}</span>
+                          {q.topic && <span className="badge badge-secondary">{q.topic}</span>}
+                          <span className="badge badge-primary">{q.difficulty}</span>
+                          <span className="badge badge-secondary">{q.marks} Marks</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.25rem' }}>
+                          <button className="btn btn-secondary btn-sm" style={{ padding: '0.25rem' }} onClick={() => {
+                            setIsEditingQuestion(true);
+                            setQuestionForm({
+                              id: q.id,
+                              questionText: q.questionText,
+                              optionA: q.options[0]?.text || '',
+                              optionB: q.options[1]?.text || '',
+                              optionC: q.options[2]?.text || '',
+                              optionD: q.options[3]?.text || '',
+                              correctAnswer: q.correctAnswer,
+                              difficulty: q.difficulty,
+                              subject: q.subject,
+                              topic: q.topic || '',
+                              branch: q.branch || 'CSE',
+                              marks: q.marks || 1
+                            });
+                          }}>
+                            Edit
+                          </button>
+                          <button className="btn btn-secondary btn-sm" style={{ padding: '0.25rem', color: 'var(--color-danger)' }} onClick={() => handleQuestionDelete(q.id)}>
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{q.questionText}</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.25rem', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                        {q.options.map(opt => (
+                          <div key={opt.key} style={{ padding: '0.25rem', border: '1px solid var(--border-color)', borderRadius: '4px', backgroundColor: q.correctAnswer === opt.key ? 'var(--color-success-light)' : 'transparent' }}>
+                            <strong>{opt.key}:</strong> {opt.text}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Question Papers Builder */}
+        {activeTab === 'question_papers' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.8fr', gap: '1.5rem' }}>
+            {/* Left Column: Build details */}
+            <div className="card">
+              <h3 className="card-title">Assemble Question Paper</h3>
+              <form onSubmit={handlePaperSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Paper Title *</label>
+                  <input type="text" className="form-control" placeholder="Midterm Physics Dec 2026" value={paperForm.title} onChange={(e) => setPaperForm({ ...paperForm, title: e.target.value })} required />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Subject *</label>
+                  <input type="text" className="form-control" placeholder="Physics" value={paperForm.subject} onChange={(e) => setPaperForm({ ...paperForm, subject: e.target.value })} required />
+                </div>
+
+                <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem', marginBlock: '0.5rem' }}>
+                  <strong style={{ fontSize: '0.85rem' }}>Assembled Questions ({paperForm.selectedQuestions.length})</strong>
+                  <span style={{ float: 'right', fontSize: '0.85rem', color: 'var(--color-success)', fontWeight: 700 }}>Total Marks: {paperForm.totalMarks}</span>
+                </div>
+
+                <div style={{ maxHeight: '350px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {paperForm.selectedQuestions.length === 0 ? (
+                    <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                      Select questions from the bank on the right, or use the Randomizer.
+                    </div>
+                  ) : (
+                    paperForm.selectedQuestions.map((qId, idx) => {
+                      const q = questions.find(qu => qu.id === qId);
+                      if (!q) return null;
+                      return (
+                        <div key={qId} style={{ border: '1px solid var(--border-color)', borderRadius: '6px', padding: '0.5rem 0.75rem', display: 'flex', flexDirection: 'column', gap: '0.25rem', backgroundColor: 'var(--bg-surface-hover)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Q{idx + 1} • {q.difficulty}</span>
+                            <button type="button" className="btn btn-secondary btn-sm" style={{ padding: '0.15rem 0.3rem', color: 'var(--color-danger)' }} onClick={() => {
+                              const updated = paperForm.selectedQuestions.filter(id => id !== qId);
+                              const updatedMarks = { ...paperForm.questionMarks };
+                              delete updatedMarks[qId];
+                              const nextTotal = updated.reduce((sum, id) => sum + (updatedMarks[id] || 0), 0);
+                              setPaperForm({ ...paperForm, selectedQuestions: updated, questionMarks: updatedMarks, totalMarks: nextTotal });
+                            }}>Remove</button>
+                          </div>
+                          <p style={{ fontSize: '0.8rem', margin: 0 }}>{q.questionText}</p>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Custom Marks:</span>
+                            <input type="number" style={{ width: '60px', padding: '0.15rem 0.25rem', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '0.75rem' }} value={paperForm.questionMarks[qId] || 1} min="1" onChange={(e) => {
+                              const custom = parseInt(e.target.value) || 1;
+                              const updatedMarks = { ...paperForm.questionMarks, [qId]: custom };
+                              const nextTotal = paperForm.selectedQuestions.reduce((sum, id) => sum + (updatedMarks[id] || 0), 0);
+                              setPaperForm({ ...paperForm, questionMarks: updatedMarks, totalMarks: nextTotal });
+                            }} />
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.5rem' }}>Assemble Paper Template</button>
+              </form>
+            </div>
+
+            {/* Right Column: Question Bank Selections & Randomizer */}
+            <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              {/* Randomizer Widget */}
+              <div style={{ border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: '1rem', backgroundColor: 'var(--bg-surface-hover)' }}>
+                <h4 style={{ margin: 0, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--color-primary)' }}>
+                  <RotateCcw size={16} /> Random Question Generator
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '0.5rem', marginTop: '0.75rem' }}>
+                  <input type="text" className="form-control form-control-sm" placeholder="Subject..." value={paperQSubject} onChange={(e) => setPaperQSubject(e.target.value)} />
+                  <select className="form-control form-select form-select-sm" value={paperQDifficulty} onChange={(e) => setPaperQDifficulty(e.target.value)}>
+                    <option value="">Difficulty</option>
+                    <option value="Easy">Easy</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Hard">Hard</option>
+                  </select>
+                  <input type="number" className="form-control form-control-sm" value={randomCount} onChange={(e) => setRandomCount(parseInt(e.target.value) || 1)} min="1" max="50" />
+                </div>
+                <button type="button" className="btn btn-primary btn-sm" style={{ width: '100%', marginTop: '0.5rem' }} onClick={() => {
+                  let filtered = questions.filter(q => {
+                    const matchesSubj = !paperQSubject || q.subject.toLowerCase().includes(paperQSubject.toLowerCase());
+                    const matchesDiff = !paperQDifficulty || q.difficulty === paperQDifficulty;
+                    return matchesSubj && matchesDiff;
+                  });
+                  if (filtered.length === 0) {
+                    addToast('Generator Error', 'No questions match criteria.', 'warning');
+                    return;
+                  }
+                  // Shuffle and pick
+                  const shuffled = [...filtered].sort(() => 0.5 - Math.random());
+                  const selection = shuffled.slice(0, randomCount);
+                  const newIds = [...paperForm.selectedQuestions];
+                  const newMarks = { ...paperForm.questionMarks };
+                  
+                  selection.forEach(q => {
+                    if (!newIds.includes(q.id)) {
+                      newIds.push(q.id);
+                      newMarks[q.id] = q.marks || 1;
+                    }
+                  });
+
+                  const nextTotal = newIds.reduce((sum, id) => sum + (newMarks[id] || 0), 0);
+                  setPaperForm({ ...paperForm, selectedQuestions: newIds, questionMarks: newMarks, totalMarks: nextTotal });
+                  addToast('Added Randomly', `Selected and inserted ${selection.length} questions into paper.`, 'success');
+                }}>Generate & Append</button>
+              </div>
+
+              {/* Individual Question Checklist */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h4 style={{ margin: 0, fontSize: '0.85rem' }}>Select Individual Questions</h4>
+                <input type="text" className="form-control" style={{ width: '180px', padding: '0.25rem 0.5rem', fontSize: '0.75rem' }} placeholder="Search..." value={paperQSearch} onChange={(e) => setPaperQSearch(e.target.value)} />
+              </div>
+
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '350px' }}>
+                {questions
+                  .filter(q => !paperQSearch || q.questionText.toLowerCase().includes(paperQSearch.toLowerCase()))
+                  .map(q => {
+                    const isChecked = paperForm.selectedQuestions.includes(q.id);
+                    return (
+                      <div key={q.id} style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', border: '1px solid var(--border-color)', padding: '0.5rem', borderRadius: '4px' }}>
+                        <input type="checkbox" checked={isChecked} style={{ marginTop: '0.2rem' }} onChange={() => {
+                          let updated = [...paperForm.selectedQuestions];
+                          let updatedMarks = { ...paperForm.questionMarks };
+                          if (isChecked) {
+                            updated = updated.filter(id => id !== q.id);
+                            delete updatedMarks[q.id];
+                          } else {
+                            updated.push(q.id);
+                            updatedMarks[q.id] = q.marks || 1;
+                          }
+                          const nextTotal = updated.reduce((sum, id) => sum + (updatedMarks[id] || 0), 0);
+                          setPaperForm({ ...paperForm, selectedQuestions: updated, questionMarks: updatedMarks, totalMarks: nextTotal });
+                        }} />
+                        <div>
+                          <div style={{ fontSize: '0.75rem', fontWeight: 600 }}>{q.questionText}</div>
+                          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>{q.subject} • {q.difficulty} • Default Marks: {q.marks}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Rosters & Assignments */}
+        {activeTab === 'assignments' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.8fr', gap: '1.5rem' }}>
+            <div className="card">
+              <h3 className="card-title">Assign Students to Exam</h3>
+              <form onSubmit={handleAssignmentSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
+                <div className="form-group">
+                  <label className="form-label">Select Scheduled Exam *</label>
+                  <select className="form-control form-select" value={assignmentForm.examId} onChange={(e) => setAssignmentForm({ ...assignmentForm, examId: e.target.value })} required>
+                    <option value="">-- Choose Exam --</option>
+                    {exams.map(e => (
+                      <option key={e.id} value={e.id}>{e.title} ({e.subject})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Assignment Method *</label>
+                  <div style={{ display: 'flex', gap: '1rem', marginTop: '0.25rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.85rem' }}>
+                      <input type="radio" checked={assignmentForm.type === 'branch'} onChange={() => setAssignmentForm({ ...assignmentForm, type: 'branch' })} />
+                      Branch & Year Match
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.85rem' }}>
+                      <input type="radio" checked={assignmentForm.type === 'roster'} onChange={() => setAssignmentForm({ ...assignmentForm, type: 'roster' })} />
+                      Roll Number Roster List
+                    </label>
+                  </div>
+                </div>
+
+                {assignmentForm.type === 'branch' ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">Branch Filter</label>
+                      <select className="form-control form-select" value={assignmentForm.branch} onChange={(e) => setAssignmentForm({ ...assignmentForm, branch: e.target.value })}>
+                        <option value="CSE">CSE</option>
+                        <option value="ECE">ECE</option>
+                        <option value="EEE">EEE</option>
+                        <option value="ME">ME</option>
+                        <option value="CE">CE</option>
+                        <option value="IT">IT</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Year Filter</label>
+                      <select className="form-control form-select" value={assignmentForm.year} onChange={(e) => setAssignmentForm({ ...assignmentForm, year: e.target.value })}>
+                        <option value="1st Year">1st Year</option>
+                        <option value="2nd Year">2nd Year</option>
+                        <option value="3rd Year">3rd Year</option>
+                        <option value="4th Year">4th Year</option>
+                      </select>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="form-group">
+                    <label className="form-label">Paste Roster Roll Numbers (Comma or Newline separated) *</label>
+                    <textarea className="form-control" rows="5" placeholder="e.g. ICS-2024-099, ICS-2024-101" value={assignmentForm.rosterText} onChange={(e) => setAssignmentForm({ ...assignmentForm, rosterText: e.target.value })} required={assignmentForm.type === 'roster'} style={{ fontFamily: 'monospace', fontSize: '0.75rem' }} />
+                  </div>
+                )}
+
+                <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '0.5rem' }}>
+                  Assign Student Roster
+                </button>
+              </form>
+            </div>
+
+            <div className="card">
+              <h3 className="card-title">Rosters & Templates Downloads</h3>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                Download sample spreadsheets or review current student counts assigned to exams.
+              </p>
+              
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
+                <button className="btn btn-secondary btn-sm" onClick={() => downloadSampleTemplate('student')}>
+                  <Download size={12} /> Student Import Template
+                </button>
+                <button className="btn btn-secondary btn-sm" onClick={() => downloadSampleTemplate('question')}>
+                  <Download size={12} /> Question Import Template
+                </button>
+              </div>
+
+              <h4 style={{ fontSize: '0.85rem', fontWeight: 700, borderBottom: '1px solid var(--border-color)', paddingBottom: '0.25rem' }}>Current Exam Assignment Summary</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+                {exams.map(e => (
+                  <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', padding: '0.25rem 0', borderBottom: '1px dashed var(--border-color)' }}>
+                    <span>{e.title}</span>
+                    <strong>
+                      {e.assignedStudents && e.assignedStudents.length > 0 ? `${e.assignedStudents.length} Students` : e.branchFilter ? `${e.branchFilter} - ${e.yearFilter}` : 'None'}
+                    </strong>
+                  </div>
+                ))}
               </div>
             </div>
           </div>

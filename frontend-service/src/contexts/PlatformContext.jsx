@@ -322,6 +322,11 @@ export const PlatformProvider = ({ children }) => {
     return saved ? JSON.parse(saved) : INITIAL_QUESTIONS;
   });
 
+  const [questionPapers, setQuestionPapers] = useState(() => {
+    const saved = localStorage.getItem('platform_question_papers');
+    return saved ? JSON.parse(saved) : [];
+  });
+
   const [exams, setExams] = useState(() => {
     const saved = localStorage.getItem('platform_exams');
     return saved ? JSON.parse(saved) : INITIAL_EXAMS;
@@ -371,6 +376,10 @@ export const PlatformProvider = ({ children }) => {
           setStudents(studentData);
           const examData = await apiRequest('/exams', 'GET', null, token);
           setExams(examData);
+          const questionsData = await apiRequest('/exams/questions', 'GET', null, token);
+          setQuestions(questionsData);
+          const papersData = await apiRequest('/exams/question-papers', 'GET', null, token);
+          setQuestionPapers(papersData);
         } else if (currentUser.role === 'student') {
           const studentExams = await apiRequest('/exams/student', 'GET', null, token);
           setExams(studentExams);
@@ -442,6 +451,10 @@ export const PlatformProvider = ({ children }) => {
   useEffect(() => {
     localStorage.setItem('platform_questions', JSON.stringify(questions));
   }, [questions]);
+
+  useEffect(() => {
+    localStorage.setItem('platform_question_papers', JSON.stringify(questionPapers));
+  }, [questionPapers]);
 
   useEffect(() => {
     localStorage.setItem('platform_exams', JSON.stringify(exams));
@@ -1523,53 +1536,92 @@ export const PlatformProvider = ({ children }) => {
     }
   };
 
-  const scheduleExam = (examData) => {
-    const newExam = {
-      id: uid('e'),
-      title: examData.title,
-      subject: examData.subject,
-      department: examData.department,
-      duration: examData.duration || 60,
-      questions: examData.questions || ['q1', 'q2', 'q3'],
-      scheduledDate: examData.scheduledDate || '2026-05-30',
-      scheduledTime: examData.scheduledTime || '10:00 AM',
-      negativeMarking: examData.negativeMarking || 0,
-      randomized: examData.randomized ?? true,
-      
-      // New filters and visibility constraints
-      attemptLimit: parseInt(examData.attemptLimit) || 1,
-      passCutoff: parseInt(examData.passCutoff) || 40,
-      branchFilter: examData.branchFilter || 'CSE',
-      yearFilter: examData.yearFilter || '1st Year',
-      windowStart: examData.windowStart || new Date().toISOString().slice(0, 16),
-      windowEnd: examData.windowEnd || new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString().slice(0, 16),
-      
-      collegeId: currentUser.collegeId || 'c1',
-      status: 'published',
-      creator: currentUser.name,
-      batches: examData.batches || ['b1'],
-      publishedResults: false
-    };
-
-    setExams(prev => [...prev, newExam]);
-
-    // Send notifications to students who match the college, branch, and year filters
-    students.forEach(stud => {
-      const matchesCollege = stud.collegeId === newExam.collegeId;
-      const matchesBranch = stud.branch === newExam.branchFilter;
-      const matchesYear = stud.year === newExam.yearFilter;
-      if (matchesCollege && matchesBranch && matchesYear) {
-        triggerNotification('student', stud.id, 'New Exam Assigned', `Exam "${newExam.title}" is scheduled for your branch (${newExam.branchFilter}) and year (${newExam.yearFilter}).`);
-        sendMockEmail(
-          stud.email,
-          `Assigned Examination: ${newExam.title}`,
-          'exam_assigned',
-          `Dear ${stud.name},\n\nYou have been assigned the exam: ${newExam.title}.\nDuration: ${newExam.duration} Minutes\nPass Threshold: ${newExam.passCutoff}%\nAttempt Limit: ${newExam.attemptLimit}\nAvailability Window: ${newExam.windowStart} to ${newExam.windowEnd}`
-        );
+  const scheduleExam = async (examData) => {
+    if (apiActive) {
+      try {
+        const token = localStorage.getItem('access_token');
+        const res = await apiRequest('/exams', 'POST', examData, token);
+        setExams(prev => [...prev, res.exam]);
+        addToast('Exam Created', `Exam successfully created as draft.`, 'success');
+        return res.exam;
+      } catch (err) {
+        addToast('Creation Failed', err.message, 'danger');
+        throw err;
       }
-    });
+    } else {
+      const newExam = {
+        id: uid('e'),
+        title: examData.title,
+        subject: examData.subject,
+        questionPaperId: examData.questionPaperId,
+        questions: examData.questions || [],
+        duration: parseInt(examData.duration) || 60,
+        total_marks: examData.total_marks || 100,
+        negativeMarking: parseFloat(examData.negativeMarking) || 0,
+        randomized: examData.randomized ?? true,
+        attemptLimit: parseInt(examData.attemptLimit) || 1,
+        passCutoff: parseInt(examData.passCutoff) || 40,
+        branchFilter: examData.branchFilter || '',
+        yearFilter: examData.yearFilter || '',
+        assignedStudents: examData.assignedStudents || [],
+        windowStart: examData.windowStart || new Date().toISOString().slice(0, 16),
+        windowEnd: examData.windowEnd || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
+        fullscreenRequired: examData.fullscreenRequired ?? true,
+        aiProctoringEnabled: examData.aiProctoringEnabled ?? true,
+        collegeId: currentUser.collegeId || 'c1',
+        status: examData.status || 'draft',
+        creator: currentUser.name,
+        publishedResults: false,
+        createdAt: new Date().toISOString()
+      };
+      setExams(prev => [...prev, newExam]);
+      if (newExam.status === 'published') {
+        students.forEach(stud => {
+          const matchesCollege = stud.collegeId === newExam.collegeId;
+          const isAssigned = newExam.assignedStudents && newExam.assignedStudents.length > 0
+            ? (newExam.assignedStudents.includes(stud.id) || newExam.assignedStudents.includes(stud.rollNumber))
+            : (!newExam.branchFilter || stud.branch === newExam.branchFilter) && (!newExam.yearFilter || stud.year === newExam.yearFilter);
+          if (matchesCollege && isAssigned) {
+            triggerNotification('student', stud.id, 'New Exam Assigned', `Exam "${newExam.title}" is published for your branch (${newExam.branchFilter || 'All'}) and year (${newExam.yearFilter || 'All'}).`);
+          }
+        });
+      }
+      addToast('Exam Configured', `Examination scheduled and saved.`, 'success');
+      return newExam;
+    }
+  };
 
-    addToast('Exam Configured', `Examination scheduled and filters applied.`, 'success');
+  const publishExam = async (examId) => {
+    if (apiActive) {
+      try {
+        const token = localStorage.getItem('access_token');
+        const res = await apiRequest(`/exams/${examId}/publish-exam`, 'PATCH', null, token);
+        setExams(prev => prev.map(e => e.id === examId ? { ...e, status: 'published' } : e));
+        addToast('Exam Published', 'Exam is now active and visible to students.', 'success');
+        return res.exam;
+      } catch (err) {
+        addToast('Publishing Failed', err.message, 'danger');
+        throw err;
+      }
+    } else {
+      setExams(prev => prev.map(e => {
+        if (e.id === examId) {
+          const updated = { ...e, status: 'published' };
+          students.forEach(stud => {
+            const matchesCollege = stud.collegeId === updated.collegeId;
+            const isAssigned = updated.assignedStudents && updated.assignedStudents.length > 0
+              ? (updated.assignedStudents.includes(stud.id) || updated.assignedStudents.includes(stud.rollNumber))
+              : (!updated.branchFilter || stud.branch === updated.branchFilter) && (!updated.yearFilter || stud.year === updated.yearFilter);
+            if (matchesCollege && isAssigned) {
+              triggerNotification('student', stud.id, 'New Exam Assigned', `Exam "${updated.title}" is published for you.`);
+            }
+          });
+          return updated;
+        }
+        return e;
+      }));
+      addToast('Exam Published', 'Exam is now active and visible to students.', 'success');
+    }
   };
 
   const publishExamResults = (examId) => {
@@ -1602,7 +1654,6 @@ export const PlatformProvider = ({ children }) => {
 
     addToast('Exam Terminated', `Proctor terminated exam for ${studentName}.`, 'warning');
     
-    // Log violation
     logFraudEvent(
       attempts.find(a => a.id === attemptId)?.examId || 'unknown',
       attempts.find(a => a.id === attemptId)?.studentId || 'unknown',
@@ -1628,23 +1679,174 @@ export const PlatformProvider = ({ children }) => {
   };
 
   // Question Bank Operations
-  const addQuestion = (questionData) => {
-    const newQ = {
-      id: uid('q'),
-      ...questionData
-    };
-    setQuestions(prev => [...prev, newQ]);
-    addToast('Question Saved', 'Question added to active question bank.', 'success');
-    return newQ;
+  const addQuestion = async (questionData) => {
+    if (apiActive) {
+      try {
+        const token = localStorage.getItem('access_token');
+        const res = await apiRequest('/exams/questions', 'POST', questionData, token);
+        setQuestions(prev => [...prev, res]);
+        addToast('Question Saved', 'Question added to active question bank.', 'success');
+        return res;
+      } catch (err) {
+        addToast('Save Failed', err.message, 'danger');
+        throw err;
+      }
+    } else {
+      const newQ = {
+        id: uid('q'),
+        ...questionData,
+        marks: parseFloat(questionData.marks) || 1,
+        createdAt: new Date().toISOString()
+      };
+      setQuestions(prev => [...prev, newQ]);
+      addToast('Question Saved', 'Question added to active question bank.', 'success');
+      return newQ;
+    }
   };
 
-  const parseQuestionUpload = (subject, topic, rawContent) => {
+  const editQuestion = async (id, questionData) => {
+    if (apiActive) {
+      try {
+        const token = localStorage.getItem('access_token');
+        const res = await apiRequest(`/exams/questions/${id}`, 'PUT', questionData, token);
+        setQuestions(prev => prev.map(q => q.id === id ? res : q));
+        addToast('Question Updated', 'Question details saved successfully.', 'success');
+        return res;
+      } catch (err) {
+        addToast('Update Failed', err.message, 'danger');
+        throw err;
+      }
+    } else {
+      setQuestions(prev => prev.map(q => q.id === id ? { ...q, ...questionData } : q));
+      addToast('Question Updated', 'Question details saved successfully.', 'success');
+    }
+  };
+
+  const deleteQuestion = async (id) => {
+    if (apiActive) {
+      try {
+        const token = localStorage.getItem('access_token');
+        await apiRequest(`/exams/questions/${id}`, 'DELETE', null, token);
+        setQuestions(prev => prev.filter(q => q.id !== id));
+        addToast('Question Deleted', 'Question removed from question bank.', 'warning');
+      } catch (err) {
+        addToast('Deletion Failed', err.message, 'danger');
+        throw err;
+      }
+    } else {
+      setQuestions(prev => prev.filter(q => q.id !== id));
+      addToast('Question Deleted', 'Question removed from question bank.', 'warning');
+    }
+  };
+
+  const bulkImportQuestions = async (rawQuestions) => {
+    if (apiActive) {
+      try {
+        const token = localStorage.getItem('access_token');
+        const res = await apiRequest('/exams/questions/bulk', 'POST', { questions: rawQuestions }, token);
+        setQuestions(prev => [...prev, ...res.questions]);
+        addToast('Import Successful', `Successfully imported ${res.count} questions.`, 'success');
+        return res;
+      } catch (err) {
+        addToast('Import Failed', err.message, 'danger');
+        throw err;
+      }
+    } else {
+      const errors = [];
+      const valid = [];
+      rawQuestions.forEach((q, i) => {
+        const rowNum = i + 1;
+        if (!q.question || !q.option_a || !q.option_b || !q.option_c || !q.option_d || !q.correct_answer || !q.difficulty || !q.subject) {
+          errors.push({ row: rowNum, error: 'Missing required columns.' });
+          return;
+        }
+        const cleanAnswer = q.correct_answer.toString().trim().toUpperCase();
+        if (!['A', 'B', 'C', 'D'].includes(cleanAnswer)) {
+          errors.push({ row: rowNum, error: `Invalid Correct Answer: ${cleanAnswer}` });
+          return;
+        }
+        valid.push({
+          id: uid('q'),
+          questionText: q.question,
+          options: [
+            { key: 'A', text: q.option_a },
+            { key: 'B', text: q.option_b },
+            { key: 'C', text: q.option_c },
+            { key: 'D', text: q.option_d }
+          ],
+          correctAnswer: cleanAnswer,
+          difficulty: q.difficulty,
+          subject: q.subject,
+          topic: q.topic || 'General',
+          branch: q.branch || 'CSE',
+          marks: parseFloat(q.marks) || 1,
+          createdAt: new Date().toISOString()
+        });
+      });
+      if (errors.length > 0) {
+        throw new Error(`Validation failed with ${errors.length} errors.`);
+      }
+      setQuestions(prev => [...prev, ...valid]);
+      addToast('Import Successful', `Successfully imported ${valid.length} questions.`, 'success');
+      return { count: valid.length, questions: valid };
+    }
+  };
+
+  // Question Paper Builder
+  const addQuestionPaper = async (paperData) => {
+    if (apiActive) {
+      try {
+        const token = localStorage.getItem('access_token');
+        const res = await apiRequest('/exams/question-papers', 'POST', paperData, token);
+        setQuestionPapers(prev => [...prev, res]);
+        addToast('Paper Saved', 'Question paper saved successfully.', 'success');
+        return res;
+      } catch (err) {
+        addToast('Save Failed', err.message, 'danger');
+        throw err;
+      }
+    } else {
+      const newPaper = {
+        id: uid('qp'),
+        title: paperData.title,
+        subject: paperData.subject,
+        questions: paperData.questions,
+        questionMarks: paperData.questionMarks,
+        totalMarks: paperData.totalMarks,
+        status: paperData.status || 'draft',
+        createdAt: new Date().toISOString()
+      };
+      setQuestionPapers(prev => [...prev, newPaper]);
+      addToast('Paper Saved', 'Question paper saved successfully.', 'success');
+      return newPaper;
+    }
+  };
+
+  const deleteQuestionPaper = async (id) => {
+    if (apiActive) {
+      try {
+        const token = localStorage.getItem('access_token');
+        await apiRequest(`/exams/question-papers/${id}`, 'DELETE', null, token);
+        setQuestionPapers(prev => prev.filter(p => p.id !== id));
+        addToast('Paper Deleted', 'Question paper deleted successfully.', 'warning');
+      } catch (err) {
+        addToast('Deletion Failed', err.message, 'danger');
+        throw err;
+      }
+    } else {
+      setQuestionPapers(prev => prev.filter(p => p.id !== id));
+      addToast('Paper Deleted', 'Question paper deleted successfully.', 'warning');
+    }
+  };
+
+  const parseQuestionUpload = async (subject, topic, rawContent) => {
     try {
       const lines = rawContent.split('\n').filter(l => l.trim().length > 0);
       let count = 0;
       const added = [];
 
-      lines.forEach((line, idx) => {
+      for (let idx = 0; idx < lines.length; idx++) {
+        const line = lines[idx];
         const parts = line.split('|').map(p => p.trim());
         if (parts.length >= 6) {
           const qText = parts[0];
@@ -1654,7 +1856,7 @@ export const PlatformProvider = ({ children }) => {
           const optD = parts[4];
           const correct = parts[5].toUpperCase();
 
-          const q = addQuestion({
+          const q = await addQuestion({
             subject,
             topic,
             type: 'mcq',
@@ -1666,12 +1868,13 @@ export const PlatformProvider = ({ children }) => {
               { key: 'C', text: optC },
               { key: 'D', text: optD }
             ],
-            correctAnswer: correct
+            correctAnswer: correct,
+            marks: 1
           });
           added.push(q);
           count++;
         }
-      });
+      }
 
       if (count > 0) {
         addToast('MCQ Extraction Complete', `AI successfully extracted ${count} MCQs from file.`, 'success');
@@ -1686,7 +1889,7 @@ export const PlatformProvider = ({ children }) => {
     }
   };
 
-  const generateAIQuestions = (subject, topic, count, difficulty, fileContent = null) => {
+  const generateAIQuestions = async (subject, topic, count, difficulty, fileContent = null) => {
     const sampleQuestions = [
       {
         questionText: `What is the primary role of the objective function in ${topic}?`,
@@ -1744,14 +1947,15 @@ export const PlatformProvider = ({ children }) => {
     const generated = [];
 
     for (let i = 0; i < numToGen; i++) {
-      const q = addQuestion({
+      const q = await addQuestion({
         subject,
         topic,
         type: 'mcq',
         difficulty,
         questionText: fileContent ? `[AI Extracted from Notes] ${sampleQuestions[i].questionText}` : sampleQuestions[i].questionText,
         options: sampleQuestions[i].options,
-        correctAnswer: sampleQuestions[i].correctAnswer
+        correctAnswer: sampleQuestions[i].correctAnswer,
+        marks: 1
       });
       generated.push(q);
     }
@@ -1958,6 +2162,7 @@ export const PlatformProvider = ({ children }) => {
       managementAdmins,
       students,
       questions,
+      questionPapers,
       exams,
       attempts,
       fraudEvents,
@@ -1995,9 +2200,15 @@ export const PlatformProvider = ({ children }) => {
       resendManagementAdminCredentials,
       processBulkUpload,
       scheduleExam,
+      publishExam,
       publishExamResults,
       forceTerminateExam,
       addQuestion,
+      editQuestion,
+      deleteQuestion,
+      bulkImportQuestions,
+      addQuestionPaper,
+      deleteQuestionPaper,
       parseQuestionUpload,
       generateAIQuestions,
       submitExamAttempt,

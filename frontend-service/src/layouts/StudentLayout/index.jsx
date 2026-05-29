@@ -18,12 +18,15 @@ const StudentPortal = () => {
     logFraudEvent,
     attachEvidenceSnapshot,
     addToast,
-    batches
+    batches,
+    apiActive,
+    apiRequest
   } = usePlatform();
 
   // App Phases: dashboard, validation, exam, result
   const [phase, setPhase] = useState('dashboard');
   const [selectedExam, setSelectedExam] = useState(null);
+  const [examQuestions, setExamQuestions] = useState([]);
   const [recentResult, setRecentResult] = useState(null);
   const [viewingAnalyticsAttempt, setViewingAnalyticsAttempt] = useState(null);
 
@@ -212,11 +215,33 @@ const StudentPortal = () => {
   };
 
   // --- Enter Exam Hall ---
-  const handleEnterExam = () => {
+  const handleEnterExam = async () => {
     if (!isFullscreenApproved) {
       addToast('Validation Pending', 'You must lock the screen to fullscreen first.', 'warning');
       return;
     }
+
+    try {
+      if (apiActive) {
+        const token = localStorage.getItem('access_token');
+        const data = await apiRequest(`/exams/student/${selectedExam.id}`, 'GET', null, token);
+        setExamQuestions(data.questions || []);
+      } else {
+        const secureQuestions = (selectedExam.questions || []).map(qId => {
+          const original = questions.find(q => q.id === qId);
+          if (original) {
+            const { correctAnswer, ...stripped } = original;
+            return stripped;
+          }
+          return null;
+        }).filter(Boolean);
+        setExamQuestions(secureQuestions);
+      }
+    } catch (err) {
+      addToast('Failed to start exam', err.message, 'danger');
+      return;
+    }
+
     setTimeLeft(selectedExam.duration * 60);
     setPhase('exam');
     setTabSwitchesCount(0);
@@ -224,7 +249,6 @@ const StudentPortal = () => {
     setUserAnswers({});
     setMarkedQuestions({});
 
-    // Log attempt as ongoing
     submitExamAttempt(selectedExam.id, currentUser.id, currentUser.name, {}, 0, false, '', true);
   };
 
@@ -446,28 +470,33 @@ Result State: ${attempt.status.toUpperCase()}
   // Filters & attempts
   // Only display exams scheduled matching college, branch, year, active window, and attempt limits.
   const filteredExams = exams.filter(e => {
-    // 1. College Match (default to 'c1' if not defined on legacy seed exams)
+    if (e.status !== 'published') return false;
+
     const examCollegeId = e.collegeId || 'c1';
     const studentCollegeId = currentUser.collegeId || 'c1';
     const collegeMatch = examCollegeId === studentCollegeId;
+    if (!collegeMatch) return false;
 
-    // 2. Branch Match
-    const branchMatch = !e.branchFilter || e.branchFilter === currentUser.branch;
+    let isAssigned = false;
+    if (e.assignedStudents && e.assignedStudents.length > 0) {
+      isAssigned = e.assignedStudents.includes(currentUser.id) || e.assignedStudents.includes(currentUser.rollNumber);
+    } else {
+      const branchMatch = !e.branchFilter || e.branchFilter === currentUser.branch;
+      const yearMatch = !e.yearFilter || e.yearFilter === currentUser.year;
+      isAssigned = branchMatch && yearMatch;
+    }
+    if (!isAssigned) return false;
 
-    // 3. Year Match
-    const yearMatch = !e.yearFilter || e.yearFilter === currentUser.year;
-
-    // 4. Availability Window Match
     const now = new Date();
     const startTime = e.windowStart ? new Date(e.windowStart) : null;
     const endTime = e.windowEnd ? new Date(e.windowEnd) : null;
     const windowMatch = (!startTime || now >= startTime) && (!endTime || now <= endTime);
+    if (!windowMatch) return false;
 
-    // 5. Attempt Limit Match (count attempts made by this student for this exam)
     const pastAttemptsCount = attempts.filter(att => att.studentId === currentUser.id && att.examId === e.id).length;
     const attemptLimitMatch = pastAttemptsCount < (e.attemptLimit || 1);
 
-    return collegeMatch && branchMatch && yearMatch && windowMatch && attemptLimitMatch;
+    return attemptLimitMatch;
   });
   const studentAttempts = attempts.filter(att => att.studentId === currentUser.id);
 
@@ -806,18 +835,18 @@ Result State: ${attempt.status.toUpperCase()}
                   </div>
                 )}
 
-                {selectedExam.questions.length === 0 ? (
+                {examQuestions.length === 0 ? (
                   <div className="question-card">No questions defined.</div>
                 ) : (
                   (() => {
-                    const qId = selectedExam.questions[currentQuestionIndex];
-                    const question = questions.find(q => q.id === qId);
+                    const question = examQuestions[currentQuestionIndex];
                     if (!question) return <div>Question details not found.</div>;
+                    const qId = question.id;
                     
                     return (
                       <div className="question-card">
                         <div className="question-header">
-                          <span className="question-num">Question {currentQuestionIndex + 1} of {selectedExam.questions.length}</span>
+                          <span className="question-num">Question {currentQuestionIndex + 1} of {examQuestions.length}</span>
                           <span className="badge badge-primary">{question.difficulty}</span>
                         </div>
                         <p className="question-text">{question.questionText}</p>
@@ -856,7 +885,7 @@ Result State: ${attempt.status.toUpperCase()}
                             {markedQuestions[currentQuestionIndex] ? 'Marked' : 'Mark for Review'}
                           </button>
 
-                          {currentQuestionIndex < selectedExam.questions.length - 1 ? (
+                          {currentQuestionIndex < examQuestions.length - 1 ? (
                             <button
                               className="btn btn-primary"
                               onClick={() => setCurrentQuestionIndex(prev => prev + 1)}
@@ -880,7 +909,8 @@ Result State: ${attempt.status.toUpperCase()}
                 <div className="card" style={{ marginTop: 'auto' }}>
                   <h4 style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>Question Navigator</h4>
                   <div className="question-navigation-grid">
-                    {selectedExam.questions.map((qId, idx) => {
+                    {examQuestions.map((q, idx) => {
+                      const qId = q.id;
                       const isAnswered = !!userAnswers[qId];
                       const isMarked = markedQuestions[idx];
                       const isCurrent = idx === currentQuestionIndex;
