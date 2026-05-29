@@ -1616,9 +1616,7 @@ export const PlatformProvider = ({ children }) => {
         randomized: examData.randomized ?? true,
         attemptLimit: parseInt(examData.attemptLimit) || 1,
         passCutoff: parseInt(examData.passCutoff) || 40,
-        branchFilter: examData.branchFilter || '',
-        yearFilter: examData.yearFilter || '',
-        assignedStudents: examData.assignedStudents || [],
+        batchId: examData.batchId || '',
         windowStart: examData.windowStart || new Date().toISOString().slice(0, 16),
         windowEnd: examData.windowEnd || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
         fullscreenRequired: examData.fullscreenRequired ?? true,
@@ -1633,11 +1631,9 @@ export const PlatformProvider = ({ children }) => {
       if (newExam.status === 'published') {
         students.forEach(stud => {
           const matchesCollege = stud.collegeId === newExam.collegeId;
-          const isAssigned = newExam.assignedStudents && newExam.assignedStudents.length > 0
-            ? (newExam.assignedStudents.includes(stud.id) || newExam.assignedStudents.includes(stud.rollNumber))
-            : (!newExam.branchFilter || stud.branch === newExam.branchFilter) && (!newExam.yearFilter || stud.year === newExam.yearFilter);
+          const isAssigned = String(stud.batchId || '') === String(newExam.batchId || '');
           if (matchesCollege && isAssigned) {
-            triggerNotification('student', stud.id, 'New Exam Assigned', `Exam "${newExam.title}" is published for your branch (${newExam.branchFilter || 'All'}) and year (${newExam.yearFilter || 'All'}).`);
+            triggerNotification('student', stud.id, 'New Exam Assigned', `Exam "${newExam.title}" is published for your batch.`);
           }
         });
       }
@@ -1680,9 +1676,7 @@ export const PlatformProvider = ({ children }) => {
           const updated = { ...e, status: 'published' };
           students.forEach(stud => {
             const matchesCollege = stud.collegeId === updated.collegeId;
-            const isAssigned = updated.assignedStudents && updated.assignedStudents.length > 0
-              ? (updated.assignedStudents.includes(stud.id) || updated.assignedStudents.includes(stud.rollNumber))
-              : (!updated.branchFilter || stud.branch === updated.branchFilter) && (!updated.yearFilter || stud.year === updated.yearFilter);
+            const isAssigned = String(stud.batchId || '') === String(updated.batchId || '');
             if (matchesCollege && isAssigned) {
               triggerNotification('student', stud.id, 'New Exam Assigned', `Exam "${updated.title}" is published for you.`);
             }
